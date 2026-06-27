@@ -69,7 +69,7 @@ export default async function TeacherDashboard() {
 
         {(assessments as Assessment[] | null)?.map((a) => (
           <div className="card" key={a.id}>
-            <div className="row" style={{ justifyContent: "space-between" }}>
+            <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <Link href={`/teacher/${a.id}`} style={{ fontSize: 17, fontWeight: 600 }}>
                   {a.title}
@@ -78,9 +78,17 @@ export default async function TeacherDashboard() {
                   {a.unit ?? "단원 미지정"} · {a.mode === "exam" ? "평가" : "연습"}
                 </div>
               </div>
-              <span className="badge">
-                {a.status === "draft" ? "초안" : a.status === "published" ? "공개" : "종료"}
-              </span>
+              <div className="row" style={{ alignItems: "center", gap: 8 }}>
+                <Link href={`/teacher/${a.id}/monitor`} className="muted" style={{ fontSize: 13 }}>
+                  응시 현황
+                </Link>
+                <Link href={`/teacher/${a.id}/edit`} className="muted" style={{ fontSize: 13 }}>
+                  수정
+                </Link>
+                <span className="badge">
+                  {a.status === "draft" ? "초안" : a.status === "published" ? "공개" : "종료"}
+                </span>
+              </div>
             </div>
           </div>
         ))}

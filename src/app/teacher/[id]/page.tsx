@@ -2,7 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Topbar } from "@/components/Topbar";
-import { publishAssessment, closeAssessment } from "@/app/actions/teacher";
+import {
+  publishAssessment,
+  closeAssessment,
+  reopenAssessment,
+  unpublishAssessment,
+} from "@/app/actions/teacher";
 import { FinalizeControls } from "@/components/FinalizeControls";
 import type {
   Assessment,
@@ -91,10 +96,34 @@ export default async function AssessmentDetail({
             </form>
           )}
           {assessment.status === "published" && (
-            <form action={closeAssessment.bind(null, id)}>
-              <button className="btn secondary" type="submit">평가 종료</button>
+            <>
+              <form action={closeAssessment.bind(null, id)}>
+                <button className="btn secondary" type="submit">평가 종료</button>
+              </form>
+              <form action={unpublishAssessment.bind(null, id)}>
+                <button
+                  className="btn secondary"
+                  type="submit"
+                  title="학생 목록에서 숨기고 초안으로 되돌립니다"
+                >
+                  회수(초안으로)
+                </button>
+              </form>
+            </>
+          )}
+          {assessment.status === "closed" && (
+            <form action={reopenAssessment.bind(null, id)}>
+              <button className="btn" type="submit" title="종료를 취소하고 응시를 재개합니다">
+                종료 취소(응시 재개)
+              </button>
             </form>
           )}
+          <Link className="btn secondary" href={`/teacher/${id}/edit`}>
+            수정
+          </Link>
+          <Link className="btn secondary" href={`/teacher/${id}/monitor`}>
+            응시 현황
+          </Link>
           <Link className="btn secondary" href={`/teacher/${id}/analytics`}>
             분석
           </Link>
