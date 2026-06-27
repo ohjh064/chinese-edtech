@@ -1,0 +1,34 @@
+{
+  "name": "chinese-edtech",
+  "version": "0.1.0",
+  "private": true,
+  "description": "핀마스터(PinMaster) — 중국어 어휘 수행평가 플랫폼",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.106.0",
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.45.4",
+    "exceljs": "^4.4.0",
+    "next": "^15.0.3",
+    "pinyin-pro": "^3.28.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/react": "^19.0.1",
+    "@types/react-dom": "^19.0.1",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

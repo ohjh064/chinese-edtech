@@ -1,0 +1,24 @@
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# build
+/dist
+
+# 환경변수(시크릿) — 절대 커밋 금지
+.env
+.env.local
+.env*.local
+
+# logs / os
+*.log
+.DS_Store
+
+# editor
+.vscode/
+.idea/
