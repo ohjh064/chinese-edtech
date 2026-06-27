@@ -145,7 +145,16 @@ export default async function AssessmentDetail({
           return (
             <div className="card" key={s.id}>
               <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                <b>{nameById.get(s.student_id)}</b>
+                <div className="row" style={{ alignItems: "center", gap: 10 }}>
+                  <b>{nameById.get(s.student_id)}</b>
+                  <Link
+                    className="btn secondary"
+                    href={`/teacher/${id}/submission/${s.id}`}
+                    style={{ padding: "4px 10px", fontSize: 13 }}
+                  >
+                    답안 보기
+                  </Link>
+                </div>
                 {g?.teacher_finalized ? (
                   <span className="ok">확정 · 최종 {g.final}점</span>
                 ) : details?.requiresTeacherConfirm ? (
@@ -158,12 +167,13 @@ export default async function AssessmentDetail({
                 <>
                   <p className="muted" style={{ fontSize: 13 }}>
                     병음 {g.pinyin_score} · 성조 {g.tone_score} · 의미 {g.meaning_score} · 문장{" "}
-                    {g.sentence_score} → 합계 {g.total} / 최종 <b>{g.final}</b>
+                    {g.sentence_score}(어법 오류 {g.sentence_errors}개) → 합계 {g.total} / 최종{" "}
+                    <b>{g.final}</b>
                   </p>
                   <FinalizeControls
                     submissionId={s.id}
                     meaningScore={g.meaning_score}
-                    sentenceScore={g.sentence_score}
+                    sentenceErrors={g.sentence_errors}
                     finalized={g.teacher_finalized}
                     meaningDetails={details?.meaning}
                     sentenceDetails={details?.sentence}

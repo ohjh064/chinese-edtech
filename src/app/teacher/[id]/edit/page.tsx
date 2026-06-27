@@ -70,6 +70,10 @@ export default async function EditAssessmentPage({
         .join(" "),
       acceptableMeanings: (k?.acceptable_meanings ?? []).join(", "),
       exampleSentence: k?.example_sentence ?? "",
+      errorPrompt: w.error_prompt ?? "",
+      acceptableCorrections: (k?.acceptable_corrections ?? []).join(" / "),
+      judgeIsGrammatical: k?.is_grammatical ?? true,
+      explanation: k?.explanation ?? "",
     };
   });
 
@@ -84,6 +88,13 @@ export default async function EditAssessmentPage({
     .select("id", { count: "exact", head: true })
     .eq("assessment_id", id);
 
+  const { data: secret } = await supabase
+    .from("teacher_secrets")
+    .select("teacher_id")
+    .eq("teacher_id", user.id)
+    .maybeSingle();
+  const hasKey = !!secret || !!process.env.ANTHROPIC_API_KEY;
+
   return (
     <>
       <Topbar name={profile.name || "교사"} role="teacher" home="/teacher" />
@@ -97,6 +108,7 @@ export default async function EditAssessmentPage({
         classes={(classes ?? []) as ClassRow[]}
         initialWords={initialWords}
         submissionCount={submissionCount ?? 0}
+        hasKey={hasKey}
       />
     </>
   );

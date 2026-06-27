@@ -5,6 +5,7 @@ import {
   createAssessment,
   type WordInput,
 } from "@/app/actions/teacher";
+import { AiGenerateWords } from "@/components/AiGenerateWords";
 import { toDisplayWord } from "@/grading/pinyin.js";
 import type { ClassRow } from "@/lib/database.types";
 
@@ -20,26 +21,45 @@ const emptyWord = (): WordInput => ({
   correctTones: "",
   acceptableMeanings: "",
   exampleSentence: "",
+  errorPrompt: "",
+  acceptableCorrections: "",
+  judgeIsGrammatical: true,
+  explanation: "",
 });
 
-export function NewAssessmentForm({ classes }: { classes: ClassRow[] }) {
+export function NewAssessmentForm({
+  classes,
+  hasKey,
+}: {
+  classes: ClassRow[];
+  hasKey: boolean;
+}) {
   const [title, setTitle] = useState("");
   const [unit, setUnit] = useState("1. 你好");
   const [classId, setClassId] = useState(classes[0]?.id ?? "");
   const [mode, setMode] = useState<"exam" | "practice">("exam");
-  const [sentenceTaskType, setSentenceTaskType] = useState<"compose" | "find_error">("compose");
+  const [sentenceTaskType, setSentenceTaskType] = useState<"compose" | "find_error" | "judge">("compose");
   const [pinyinErrorUnit, setPinyinErrorUnit] = useState<"initial_final" | "syllable" | "word">("initial_final");
   const [meaningPartialWeight, setMeaningPartialWeight] = useState("1");
   const [timeLimitMin, setTimeLimitMin] = useState("");
   const [attempts, setAttempts] = useState("1");
   const [reveal, setReveal] = useState(true);
   const [proctoring, setProctoring] = useState(false);
+  const [allowPractice, setAllowPractice] = useState(false);
   const [words, setWords] = useState<WordInput[]>([emptyWord(), emptyWord()]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   function updateWord(i: number, patch: Partial<WordInput>) {
     setWords((ws) => ws.map((w, idx) => (idx === i ? { ...w, ...patch } : w)));
+  }
+
+  /** AI 생성 결과를 기존 채워진 단어 뒤에 추가(빈 기본 행은 정리) */
+  function handleGenerated(generated: WordInput[]) {
+    setWords((ws) => {
+      const filled = ws.filter((w) => w.hanzi.trim() && w.correctPinyin.trim());
+      return [...filled, ...generated];
+    });
   }
 
   /** 한자→병음·성조 자동 채움(교사 확인·수정 가능). overwrite=false면 비어있을 때만. */
@@ -85,6 +105,7 @@ export function NewAssessmentForm({ classes }: { classes: ClassRow[] }) {
         attemptsAllowed: Number(attempts) || 1,
         revealAnswersInPractice: reveal,
         proctoring,
+        allowPractice,
         words: filled,
       });
       // 성공 시 서버 액션이 리다이렉트
@@ -163,6 +184,7 @@ export function NewAssessmentForm({ classes }: { classes: ClassRow[] }) {
               <select value={sentenceTaskType} onChange={(e) => setSentenceTaskType(e.target.value as typeof sentenceTaskType)}>
                 <option value="compose">작문형 (권장)</option>
                 <option value="find_error">오류 찾기형</option>
+                <option value="judge">어법 판단형 (O/X)</option>
               </select>
             </div>
             <div className="field grow">
@@ -182,8 +204,18 @@ export function NewAssessmentForm({ classes }: { classes: ClassRow[] }) {
               <input type="checkbox" style={{ width: "auto" }} checked={proctoring} onChange={(e) => setProctoring(e.target.checked)} />
               응시 통제(탭 이탈 감지)
             </label>
+            <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input type="checkbox" style={{ width: "auto" }} checked={allowPractice} onChange={(e) => setAllowPractice(e.target.checked)} />
+              학생 연습 허용(연습 모드 + AI 피드백)
+            </label>
           </div>
         </div>
+
+        <AiGenerateWords
+          hasKey={hasKey}
+          sentenceTaskType={sentenceTaskType}
+          onGenerated={handleGenerated}
+        />
 
         <div className="card">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -226,11 +258,44 @@ export function NewAssessmentForm({ classes }: { classes: ClassRow[] }) {
                   <label>허용 의미(쉼표 구분)</label>
                   <input value={w.acceptableMeanings} onChange={(e) => updateWord(i, { acceptableMeanings: e.target.value })} placeholder="안녕, 안녕하세요" />
                 </div>
-                <div className="field grow">
-                  <label>예문(선택)</label>
-                  <input value={w.exampleSentence ?? ""} onChange={(e) => updateWord(i, { exampleSentence: e.target.value })} />
-                </div>
+                {sentenceTaskType === "compose" && (
+                  <div className="field grow">
+                    <label>예문(선택)</label>
+                    <input value={w.exampleSentence ?? ""} onChange={(e) => updateWord(i, { exampleSentence: e.target.value })} />
+                  </div>
+                )}
               </div>
+              {sentenceTaskType === "find_error" && (
+                <div className="row">
+                  <div className="field grow">
+                    <label>제시 오류 문장(학생에게 보임)</label>
+                    <input value={w.errorPrompt ?? ""} onChange={(e) => updateWord(i, { errorPrompt: e.target.value })} placeholder="我是学生吗。" />
+                  </div>
+                  <div className="field grow">
+                    <label>정답(수정) 문장 — 여러 개는 / 로 구분</label>
+                    <input value={w.acceptableCorrections ?? ""} onChange={(e) => updateWord(i, { acceptableCorrections: e.target.value })} placeholder="我是学生。/ 我是学生" />
+                  </div>
+                </div>
+              )}
+              {sentenceTaskType === "judge" && (
+                <div className="row" style={{ alignItems: "flex-end" }}>
+                  <div className="field grow">
+                    <label>판단할 문장(학생에게 보임)</label>
+                    <input value={w.errorPrompt ?? ""} onChange={(e) => updateWord(i, { errorPrompt: e.target.value })} placeholder={`${w.hanzi || "단어"}(을)를 활용한 문장`} />
+                  </div>
+                  <div className="field" style={{ width: 150 }}>
+                    <label>정답(어법)</label>
+                    <select value={w.judgeIsGrammatical ? "O" : "X"} onChange={(e) => updateWord(i, { judgeIsGrammatical: e.target.value === "O" })}>
+                      <option value="O">맞음(O)</option>
+                      <option value="X">안 맞음(X)</option>
+                    </select>
+                  </div>
+                  <div className="field grow">
+                    <label>해설(선택)</label>
+                    <input value={w.explanation ?? ""} onChange={(e) => updateWord(i, { explanation: e.target.value })} placeholder="왜 맞는지/틀린지" />
+                  </div>
+                </div>
+              )}
               <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                 <span className="pill-preview muted">
                   미리보기: {w.correctPinyin ? toDisplayWord(w.correctPinyin, w.correctTones.split(/[\s,]+/).filter(Boolean).map(Number)) : "—"}

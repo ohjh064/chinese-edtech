@@ -57,7 +57,7 @@ export default async function StudentDashboard() {
   // 추천 단어의 평가가 현재 연습 가능한지(RLS로 조회되면 가능)
   const practiceableAssessmentIds = new Set(
     (assessments as Assessment[] | null)
-      ?.filter((a) => a.mode === "practice")
+      ?.filter((a) => a.mode === "practice" || a.allow_practice)
       .map((a) => a.id) ?? [],
   );
 
@@ -126,14 +126,23 @@ export default async function StudentDashboard() {
                   <Link className="btn" href={`/student/practice/${a.id}`}>
                     연습하기
                   </Link>
-                ) : done ? (
-                  <Link className="btn secondary" href={`/student/result/${sub!.id}`}>
-                    결과 보기
-                  </Link>
                 ) : (
-                  <Link className="btn" href={`/student/take/${a.id}`}>
-                    {sub ? "이어서 응시" : "응시 시작"}
-                  </Link>
+                  <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                    {done ? (
+                      <Link className="btn secondary" href={`/student/result/${sub!.id}`}>
+                        결과 보기
+                      </Link>
+                    ) : (
+                      <Link className="btn" href={`/student/take/${a.id}`}>
+                        {sub ? "이어서 응시" : "응시 시작"}
+                      </Link>
+                    )}
+                    {a.allow_practice && (
+                      <Link className="btn secondary" href={`/student/practice/${a.id}`}>
+                        연습하기
+                      </Link>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

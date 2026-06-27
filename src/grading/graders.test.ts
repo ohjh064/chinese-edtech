@@ -263,4 +263,37 @@ describe("gradeSentences (PRD §5.4)", () => {
     expect(r.errors).toBe(0);
     expect(r.requiresTeacherConfirm).toBeUndefined();
   });
+
+  it("어법 판단형(judge): O/X 정답 대조로 완전 자동", async () => {
+    const judgeKeys: WordKey[] = [
+      // 어법에 맞는 문장 → 정답 O
+      { id: "w1", hanzi: "我", correctPinyin: "wo", acceptableMeanings: [], grammatical: true },
+      // 어법에 틀린 문장 → 정답 X
+      { id: "w2", hanzi: "你", correctPinyin: "ni", acceptableMeanings: [], grammatical: false },
+    ];
+    const answers: StudentAnswer[] = [
+      { wordId: "w1", studentSentence: "O" }, // 맞음 — 정답
+      { wordId: "w2", studentSentence: "O" }, // 맞다고 했지만 실제 X → 오답
+    ];
+    const r = await gradeSentences(
+      answers,
+      judgeKeys,
+      resolveConfig({ sentenceTaskType: "judge" }),
+    );
+    expect(r.errors).toBe(1);
+    expect(r.score).toBe(20); // 오류 1개 → 20점
+    expect(r.requiresTeacherConfirm).toBeUndefined();
+  });
+
+  it("어법 판단형(judge): 미응답은 오류로 처리", async () => {
+    const judgeKeys: WordKey[] = [
+      { id: "w1", hanzi: "我", correctPinyin: "wo", acceptableMeanings: [], grammatical: true },
+    ];
+    const r = await gradeSentences(
+      [{ wordId: "w1", studentSentence: "" }],
+      judgeKeys,
+      resolveConfig({ sentenceTaskType: "judge" }),
+    );
+    expect(r.errors).toBe(1);
+  });
 });

@@ -11,6 +11,23 @@ const AREAS = [
   { key: "sentence", label: "오류판단(문장)" },
 ] as const;
 
+interface AreaDetail {
+  wordId: string;
+  errors: number;
+  issues?: { message: string }[];
+}
+
+/** 채점 상세(grade.details)에서 문장 영역의 피드백 메시지(해설 포함)를 추출 */
+function sentenceFeedback(details: unknown): string[] {
+  if (!details || typeof details !== "object") return [];
+  const sentence = (details as { sentence?: AreaDetail[] }).sentence;
+  if (!Array.isArray(sentence)) return [];
+  return sentence
+    .filter((d) => d.errors > 0)
+    .flatMap((d) => (d.issues ?? []).map((i) => i.message))
+    .filter(Boolean);
+}
+
 export default async function ResultPage({
   params,
 }: {
@@ -93,6 +110,17 @@ export default async function ResultPage({
                 </tbody>
               </table>
             </div>
+
+            {sentenceFeedback(grade.details).length > 0 && (
+              <div className="card">
+                <b>문장 피드백</b>
+                <ul className="muted" style={{ fontSize: 14, marginTop: 6 }}>
+                  {sentenceFeedback(grade.details).map((m, i) => (
+                    <li key={i}>{m}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         )}
       </div>

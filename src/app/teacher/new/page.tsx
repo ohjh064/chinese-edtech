@@ -25,6 +25,13 @@ export default async function NewAssessmentPage() {
     .eq("teacher_id", user.id)
     .order("created_at", { ascending: false });
 
+  const { data: secret } = await supabase
+    .from("teacher_secrets")
+    .select("teacher_id")
+    .eq("teacher_id", user.id)
+    .maybeSingle();
+  const hasKey = !!secret || !!process.env.ANTHROPIC_API_KEY;
+
   return (
     <>
       <Topbar name={profile.name || "교사"} role="teacher" home="/teacher" />
@@ -33,7 +40,7 @@ export default async function NewAssessmentPage() {
           ← 평가 목록
         </Link>
       </div>
-      <NewAssessmentForm classes={(classes ?? []) as ClassRow[]} />
+      <NewAssessmentForm classes={(classes ?? []) as ClassRow[]} hasKey={hasKey} />
     </>
   );
 }

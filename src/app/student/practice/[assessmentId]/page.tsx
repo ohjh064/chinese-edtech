@@ -29,6 +29,10 @@ export default async function PracticePage({
     .eq("id", assessmentId)
     .single<Assessment>();
   if (!assessment) redirect("/student");
+  // 연습 허용 세트만(연습 전용 또는 교사가 연습 허용한 시험 세트)
+  if (!(assessment.mode === "practice" || assessment.allow_practice)) {
+    redirect("/student");
+  }
 
   const { data: wordRows } = await supabase
     .from("words")
@@ -38,6 +42,7 @@ export default async function PracticePage({
   const words: PracticeWord[] = ((wordRows ?? []) as Word[]).map((w) => ({
     id: w.id,
     hanzi: w.hanzi,
+    errorPrompt: w.error_prompt,
   }));
 
   return (
@@ -48,7 +53,11 @@ export default async function PracticePage({
         <p className="muted">
           {assessment.unit} · 무제한 연습 — 입력 후 “채점하기”로 즉시 피드백을 받으세요.
         </p>
-        <PracticeForm assessmentId={assessmentId} words={words} />
+        <PracticeForm
+          assessmentId={assessmentId}
+          words={words}
+          sentenceTaskType={assessment.sentence_task_type}
+        />
       </div>
     </>
   );

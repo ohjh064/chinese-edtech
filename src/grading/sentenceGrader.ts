@@ -4,6 +4,7 @@
  *  - compose(작문형):  학생 작문 → AI 어법 검사(batch 1회) → 오류 카운트.
  *                      자동값은 "제안값", 교사 확정 필수(requiresTeacherConfirm).
  *  - find_error(오류 찾기형): 교사 정답(수정문) 대조 → 완전 자동.
+ *  - judge(어법 판단형):  제시 문장이 어법에 맞는지 O/X 판단 → 정답 대조 → 완전 자동.
  */
 
 import { mapErrorsToScore } from "./scale.js";
@@ -31,7 +32,51 @@ export async function gradeSentences(
   if (config.sentenceTaskType === "find_error") {
     return gradeFindError(answers, keys);
   }
+  if (config.sentenceTaskType === "judge") {
+    return gradeJudge(answers, keys);
+  }
   return gradeCompose(answers, keys, options);
+}
+
+/** 어법 판단형 — 제시 문장의 어법 적합 여부(O/X)를 정답 대조, 완전 자동 (PRD §5.4 옵션) */
+function gradeJudge(answers: StudentAnswer[], keys: WordKey[]): AreaResult {
+  const details: AnswerDetail[] = [];
+  let errors = 0;
+
+  for (const key of keys) {
+    const answer = answers.find((a) => a.wordId === key.id);
+    const raw = (answer?.studentSentence ?? "").trim().toUpperCase();
+    const answered = raw === "O" || raw === "X";
+    const studentSaysOk = raw === "O";
+    const correctOk = key.grammatical === true;
+    const correct = answered && studentSaysOk === correctOk;
+    const wordErrors = correct ? 0 : 1;
+    errors += wordErrors;
+
+    const correctLabel = correctOk ? "O(맞음)" : "X(안 맞음)";
+    const explain = key.explanation ? ` · 해설: ${key.explanation}` : "";
+    details.push({
+      wordId: key.id,
+      errors: wordErrors,
+      issues: correct
+        ? []
+        : [
+            {
+              kind: "grammar",
+              expected: correctLabel,
+              got: answered ? `${raw}(${studentSaysOk ? "맞음" : "안 맞음"})` : "(미응답)",
+              message: `정답 ${correctLabel}${explain}`,
+            },
+          ],
+    });
+  }
+
+  return {
+    area: "sentence",
+    errors,
+    score: mapErrorsToScore(errors),
+    details,
+  };
 }
 
 /** 오류 찾기형 — 정답(수정문) 대조, 완전 자동 (PRD §5.4 옵션) */

@@ -18,7 +18,8 @@ export type PinyinErrorUnit =
 /** 문장(오류판단) 과제 유형 — PRD §5.4, §15-1 */
 export type SentenceTaskType =
   | "compose" // 작문형: 단어 활용 작문 → 어법 오류 카운트(AI) — 기본값
-  | "find_error"; // 오류 찾기형: 오류 문장 제시 → 학생 수정 → 정답 대조(완전 자동)
+  | "find_error" // 오류 찾기형: 오류 문장 제시 → 학생 수정 → 정답 대조(완전 자동)
+  | "judge"; // 어법 판단형: 제시 문장이 어법에 맞는지 O/X 판단 → 정답 대조(완전 자동)
 
 /**
  * 채점 설정. PRD §15의 "사용자가 선택할 수 있게" 항목을 모두 옵션화한다.
@@ -51,10 +52,14 @@ export interface WordKey {
   acceptableMeanings: string[];
   /** 작문형 예문(참고). */
   exampleSentence?: string;
-  /** 오류 찾기형: 학생에게 제시할 오류 포함 문장. */
+  /** 오류 찾기형/판단형: 학생에게 제시할 문장(오류 포함 또는 판단 대상). */
   errorPrompt?: string;
   /** 오류 찾기형: 정답(수정된 문장) 허용 목록. */
   acceptableCorrections?: string[];
+  /** 어법 판단형: 제시 문장이 어법에 맞으면 true(O), 틀리면 false(X). */
+  grammatical?: boolean;
+  /** 어법 판단형: 판단 근거/해설(채점 후 피드백용). */
+  explanation?: string;
 }
 
 /** 학생 답안 — PRD §10 answers */

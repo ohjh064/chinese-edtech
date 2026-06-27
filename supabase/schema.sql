@@ -25,8 +25,10 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type sentence_task_type as enum ('compose', 'find_error');
+  create type sentence_task_type as enum ('compose', 'find_error', 'judge');
 exception when duplicate_object then null; end $$;
+-- 기존 DB 업그레이드: enum 값 보강(멱등)
+alter type sentence_task_type add value if not exists 'judge';
 
 do $$ begin
   create type pinyin_error_unit as enum ('initial_final', 'syllable', 'word');
@@ -83,9 +85,12 @@ create table if not exists assessments (
   meaning_partial_weight numeric not null default 1,                   -- §15-3 (1 또는 0.5)
   reveal_answers_in_practice boolean not null default true,            -- §15-4
   proctoring boolean not null default false,                           -- §15-5
+  allow_practice boolean not null default false,                       -- 학생 연습 허용(연습 모드 + AI 피드백)
   status assessment_status not null default 'draft',
   created_at timestamptz not null default now()
 );
+-- 기존 DB 업그레이드(멱등)
+alter table assessments add column if not exists allow_practice boolean not null default false;
 
 -- 학생 노출 가능한 문항 정보
 create table if not exists words (
@@ -105,8 +110,13 @@ create table if not exists word_keys (
   correct_tones int[] not null default '{}',
   acceptable_meanings text[] not null default '{}',
   example_sentence text,
-  acceptable_corrections text[] not null default '{}'  -- 오류 찾기형 정답
+  acceptable_corrections text[] not null default '{}',  -- 오류 찾기형 정답
+  is_grammatical boolean,                               -- 어법 판단형 정답(O=true/X=false)
+  explanation text                                      -- 어법 판단형 해설(교사 전용)
 );
+-- 기존 DB 업그레이드(멱등)
+alter table word_keys add column if not exists is_grammatical boolean;
+alter table word_keys add column if not exists explanation text;
 
 create table if not exists submissions (
   id uuid primary key default gen_random_uuid(),

@@ -6,7 +6,7 @@
 export type UserRole = "teacher" | "student";
 export type AssessmentMode = "practice" | "exam";
 export type AssessmentStatus = "draft" | "published" | "closed";
-export type SentenceTaskTypeDb = "compose" | "find_error";
+export type SentenceTaskTypeDb = "compose" | "find_error" | "judge";
 export type PinyinErrorUnitDb = "initial_final" | "syllable" | "word";
 export type SubmissionStatus = "in_progress" | "submitted" | "graded";
 export type AttendanceStatusDb = "attempted" | "long_absent" | "not_attempted";
@@ -44,6 +44,7 @@ export interface Assessment {
   meaning_partial_weight: number;
   reveal_answers_in_practice: boolean;
   proctoring: boolean;
+  allow_practice: boolean;
   status: AssessmentStatus;
   created_at: string;
 }
@@ -65,6 +66,8 @@ export interface WordKey {
   acceptable_meanings: string[];
   example_sentence: string | null;
   acceptable_corrections: string[];
+  is_grammatical: boolean | null;
+  explanation: string | null;
 }
 
 export interface Submission {

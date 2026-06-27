@@ -1,24 +1,31 @@
 "use server";
 
 /**
- * 연습 모드 즉시 채점 (PRD §6.1) — 병음·성조 결정론 채점, AI 비용 0.
+ * 연습 모드 즉시 채점 + AI 피드백 (PRD §6.1 확장).
  *
  * 점수표(grades, 교사 확정 후 공개)를 거치지 않고 결과를 학생에게 바로 반환한다.
- * 정답키는 학생이 못 읽으므로(RLS) 서버(admin)에서 읽어 채점하며,
- * 정답 공개(expected/정답표시)는 교사 설정(reveal_answers_in_practice)을 따른다.
- * 무제한 재시도. 연습 기록은 practice_logs에 남겨 추후 약점 분석에 사용.
+ * 정답키는 학생이 못 읽으므로(RLS) 서버(admin)에서 읽어 기존 채점 엔진(gradeSubmission)으로
+ * 병음·성조(결정론) + 의미·문장(AI 코칭)을 채점한다. AI는 세트 작성 교사의 BYOK 키로 호출하며
+ * ai-cache로 반복 연습 비용을 줄인다. 키가 없으면 결정론 채점만 수행한다.
+ *
+ * 정답 공개(reveal)는 교사 설정을 따르되, 시험용 세트는 응시 제출 전에는 공개하지 않는다
+ * (시험 문제·정답 사전 노출 방지). 무제한 재시도. 기록은 practice_logs.
  */
 import {
   createSupabaseServerClient,
   createSupabaseAdminClient,
 } from "@/lib/supabase/server";
-import { toGradingConfig } from "@/lib/grading-bridge";
-import { gradePinyin } from "@/grading/pinyinGrader.js";
-import { gradeTones } from "@/grading/toneGrader.js";
+import { toGradingConfig, resolveAiProviderForTeacher } from "@/lib/grading-bridge";
+import { gradeSubmission } from "@/grading/index.js";
+import { resolveConfig } from "@/grading/scale.js";
 import { normalizeMeaning } from "@/grading/meaningGrader.js";
 import { toDisplayWord } from "@/grading/pinyin.js";
-import { resolveConfig } from "@/grading/scale.js";
-import type { StudentAnswer, WordKey as EngineWordKey } from "@/grading/index.js";
+import type {
+  StudentAnswer,
+  WordKey as EngineWordKey,
+  AreaResult,
+  FinalScore,
+} from "@/grading/index.js";
 import type { Assessment, Word, WordKey } from "@/lib/database.types";
 
 export interface PracticeAnswerInput {
@@ -26,11 +33,13 @@ export interface PracticeAnswerInput {
   studentPinyin: string; // 성조 제외
   studentTones: number[];
   studentMeaning: string;
+  /** 작문형=문장, 오류찾기형=수정문, 판단형="O"/"X" */
+  studentSentence: string;
 }
 
 export interface PracticeIssue {
   syllableIndex?: number;
-  kind: "initial" | "final" | "tone" | "meaning" | "missing" | "extra";
+  kind: "initial" | "final" | "tone" | "meaning" | "grammar" | "missing" | "extra";
   expected?: string; // reveal=true일 때만 포함
   message: string;
 }
@@ -41,6 +50,8 @@ export interface PracticeWordFeedback {
   pinyinOk: boolean;
   toneOk: boolean;
   meaningOk: boolean;
+  /** 문장 영역: null = AI 미적용(작문형, 자동 채점 불가) */
+  sentenceOk: boolean | null;
   issues: PracticeIssue[];
   /** reveal=true일 때만 정답 노출 */
   correctDisplay?: string;
@@ -49,8 +60,11 @@ export interface PracticeWordFeedback {
 
 export interface PracticeResult {
   reveal: boolean;
+  aiUsed: boolean;
   pinyinScore: number;
   toneScore: number;
+  meaningScore: number;
+  sentenceScore: number;
   words: PracticeWordFeedback[];
 }
 
@@ -71,9 +85,25 @@ export async function gradePracticeAttempt(
     .eq("id", assessmentId)
     .single<Assessment>();
   if (!assessment) throw new Error("연습할 수 없는 평가입니다");
+  if (!(assessment.mode === "practice" || assessment.allow_practice)) {
+    throw new Error("연습이 허용되지 않은 평가입니다");
+  }
 
-  const reveal = assessment.reveal_answers_in_practice;
   const config = resolveConfig(toGradingConfig(assessment));
+
+  // 정답 공개 정책: 시험 세트는 응시 제출 후에만 공개(사전 노출 방지)
+  let reveal = assessment.reveal_answers_in_practice;
+  if (assessment.mode === "exam") {
+    const { data: sub } = await supabase
+      .from("submissions")
+      .select("id")
+      .eq("assessment_id", assessmentId)
+      .eq("student_id", user.id)
+      .neq("status", "in_progress")
+      .limit(1)
+      .maybeSingle();
+    reveal = reveal && !!sub;
+  }
 
   // 정답키는 서버(admin)에서만 읽는다
   const admin = createSupabaseAdminClient();
@@ -99,6 +129,13 @@ export async function gradePracticeAttempt(
       correctPinyin: k?.correct_pinyin ?? "",
       correctTones: k?.correct_tones ?? [],
       acceptableMeanings: k?.acceptable_meanings ?? [],
+      ...(k?.example_sentence ? { exampleSentence: k.example_sentence } : {}),
+      ...(w.error_prompt ? { errorPrompt: w.error_prompt } : {}),
+      ...(k?.acceptable_corrections
+        ? { acceptableCorrections: k.acceptable_corrections }
+        : {}),
+      ...(k?.is_grammatical != null ? { grammatical: k.is_grammatical } : {}),
+      ...(k?.explanation ? { explanation: k.explanation } : {}),
     };
   });
 
@@ -110,44 +147,83 @@ export async function gradePracticeAttempt(
       studentPinyin: a?.studentPinyin ?? "",
       studentTones: a?.studentTones ?? [],
       studentMeaning: a?.studentMeaning ?? "",
+      studentSentence: a?.studentSentence ?? "",
     };
   });
 
-  const pinyin = gradePinyin(engineAnswers, engineKeys, config);
-  const tone = gradeTones(engineAnswers, engineKeys);
+  // 세트 작성 교사의 키로 의미·문장 AI 코칭(없으면 결정론만). 실패 시 AI 없이 재채점.
+  const ai = await resolveAiProviderForTeacher(assessment.teacher_id);
+  let result: FinalScore;
+  let aiUsed = !!ai;
+  try {
+    result = await gradeSubmission({
+      keys: engineKeys,
+      answers: engineAnswers,
+      config: toGradingConfig(assessment),
+      ...(ai ? { ai } : {}),
+    });
+  } catch {
+    aiUsed = false;
+    result = await gradeSubmission({
+      keys: engineKeys,
+      answers: engineAnswers,
+      config: toGradingConfig(assessment),
+    });
+  }
 
-  const pinyinByWord = new Map(pinyin.details.map((d) => [d.wordId, d]));
-  const toneByWord = new Map(tone.details.map((d) => [d.wordId, d]));
+  const detailMap = (area: AreaResult) =>
+    new Map(area.details.map((d) => [d.wordId, d]));
+  const pinyinD = detailMap(result.pinyin);
+  const toneD = detailMap(result.tone);
+  const meaningD = detailMap(result.meaning);
+  const sentenceD = detailMap(result.sentence);
+  const isCompose = config.sentenceTaskType === "compose";
 
   const words_fb: PracticeWordFeedback[] = wordList.map((w) => {
     const k = keyByWord.get(w.id);
-    const pd = pinyinByWord.get(w.id);
-    const td = toneByWord.get(w.id);
+    const pd = pinyinD.get(w.id);
+    const td = toneD.get(w.id);
+    const md = meaningD.get(w.id);
+    const sd = sentenceD.get(w.id);
     const a = ansByWord.get(w.id);
 
-    const acceptable = new Set((k?.acceptable_meanings ?? []).map(normalizeMeaning));
-    const meaningOk =
-      !!a?.studentMeaning && acceptable.has(normalizeMeaning(a.studentMeaning));
-
     const issues: PracticeIssue[] = [];
-    for (const iss of pd?.issues ?? []) {
+    const push = (kind: PracticeIssue["kind"], message: string, opts?: { syllableIndex?: number; expected?: string }) => {
       issues.push({
-        ...(iss.syllableIndex !== undefined ? { syllableIndex: iss.syllableIndex } : {}),
-        kind: iss.kind as PracticeIssue["kind"],
-        ...(reveal && iss.expected !== undefined ? { expected: iss.expected } : {}),
-        message: reveal ? iss.message : maskMessage(iss.kind),
+        ...(opts?.syllableIndex !== undefined ? { syllableIndex: opts.syllableIndex } : {}),
+        kind,
+        ...(reveal && opts?.expected !== undefined ? { expected: opts.expected } : {}),
+        message: reveal ? message : maskMessage(kind),
+      });
+    };
+    for (const iss of pd?.issues ?? []) {
+      push(iss.kind as PracticeIssue["kind"], iss.message, {
+        syllableIndex: iss.syllableIndex,
+        expected: iss.expected,
       });
     }
     for (const iss of td?.issues ?? []) {
-      issues.push({
-        ...(iss.syllableIndex !== undefined ? { syllableIndex: iss.syllableIndex } : {}),
-        kind: "tone",
-        ...(reveal && iss.expected !== undefined ? { expected: iss.expected } : {}),
-        message: reveal ? iss.message : `${(iss.syllableIndex ?? 0) + 1}번째 음절 성조 오류`,
-      });
+      push("tone", iss.message, { syllableIndex: iss.syllableIndex, expected: iss.expected });
     }
-    if (!meaningOk) {
-      issues.push({ kind: "meaning", message: "의미 오답" });
+
+    // 의미: AI 있으면 엔진 판정(코칭 reason), 없으면 정답 목록 정확 일치
+    let meaningOk: boolean;
+    if (aiUsed) {
+      meaningOk = (md?.errors ?? 0) === 0;
+      for (const iss of md?.issues ?? []) push("meaning", iss.message);
+    } else {
+      const acceptable = new Set((k?.acceptable_meanings ?? []).map(normalizeMeaning));
+      meaningOk = !!a?.studentMeaning && acceptable.has(normalizeMeaning(a.studentMeaning));
+      if (!meaningOk) push("meaning", a?.studentMeaning ? "의미 오답" : "의미 미입력");
+    }
+
+    // 문장: 작문형은 AI 없으면 자동 채점 불가(null). 오류찾기형/판단형은 결정론.
+    let sentenceOk: boolean | null;
+    if (isCompose && !aiUsed) {
+      sentenceOk = null;
+    } else {
+      sentenceOk = (sd?.errors ?? 0) === 0;
+      for (const iss of sd?.issues ?? []) push("grammar", iss.message);
     }
 
     const fb: PracticeWordFeedback = {
@@ -156,6 +232,7 @@ export async function gradePracticeAttempt(
       pinyinOk: (pd?.errors ?? 0) === 0,
       toneOk: (td?.errors ?? 0) === 0,
       meaningOk,
+      sentenceOk,
       issues,
     };
     if (reveal && k) {
@@ -174,6 +251,7 @@ export async function gradePracticeAttempt(
         pinyin: fb.pinyinOk,
         tone: fb.toneOk,
         meaning: fb.meaningOk,
+        sentence: fb.sentenceOk,
       },
     }));
     if (logRows.length) await supabase.from("practice_logs").insert(logRows);
@@ -183,16 +261,32 @@ export async function gradePracticeAttempt(
 
   return {
     reveal,
-    pinyinScore: pinyin.score,
-    toneScore: tone.score,
+    aiUsed,
+    pinyinScore: result.pinyin.score,
+    toneScore: result.tone.score,
+    meaningScore: result.meaning.score,
+    sentenceScore: result.sentence.score,
     words: words_fb,
   };
 }
 
 function maskMessage(kind: string): string {
-  if (kind === "initial") return "성모 오류";
-  if (kind === "final") return "운모 오류";
-  if (kind === "missing") return "음절 누락";
-  if (kind === "extra") return "여분 음절";
-  return "오류";
+  switch (kind) {
+    case "initial":
+      return "성모 오류";
+    case "final":
+      return "운모 오류";
+    case "tone":
+      return "성조 오류";
+    case "missing":
+      return "음절 누락";
+    case "extra":
+      return "여분 음절";
+    case "meaning":
+      return "의미 오류";
+    case "grammar":
+      return "문장 어법 오류";
+    default:
+      return "오류";
+  }
 }

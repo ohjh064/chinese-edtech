@@ -22,6 +22,7 @@ interface Row {
   inRoster: boolean;
   state: State;
   attempts: number;
+  submissionId: string | null;
   startedAt: string | null;
   submittedAt: string | null;
   answered: number;
@@ -210,6 +211,7 @@ export default async function MonitorPage({
         inRoster,
         state: "not_started",
         attempts: 0,
+        submissionId: null,
         startedAt: null,
         submittedAt: null,
         answered: 0,
@@ -242,6 +244,7 @@ export default async function MonitorPage({
       inRoster,
       state,
       attempts: attemptsByStudent.get(sid) ?? 0,
+      submissionId: sub.id,
       startedAt: sub.started_at,
       submittedAt: sub.submitted_at,
       answered: answeredBySub.get(sub.id) ?? 0,
@@ -351,7 +354,13 @@ export default async function MonitorPage({
                   <tr key={r.studentId}>
                     <td>{r.classNo ?? "—"}</td>
                     <td style={{ fontWeight: 600 }}>
-                      {r.name}
+                      {r.submissionId ? (
+                        <Link href={`/teacher/${id}/submission/${r.submissionId}`}>
+                          {r.name}
+                        </Link>
+                      ) : (
+                        r.name
+                      )}
                       {!r.inRoster && (
                         <span className="muted" style={{ fontSize: 11 }}> (명단 외)</span>
                       )}

@@ -11,6 +11,15 @@ import {
 export interface PracticeWord {
   id: string;
   hanzi: string;
+  errorPrompt?: string | null;
+}
+
+type SentenceTaskType = "compose" | "find_error" | "judge";
+
+interface RawInput {
+  pinyin: string;
+  meaning: string;
+  sentence: string;
 }
 
 function convertPinyin(raw: string): { pinyin: string; tones: number[] } {
@@ -27,18 +36,20 @@ function convertPinyin(raw: string): { pinyin: string; tones: number[] } {
 export function PracticeForm({
   assessmentId,
   words,
+  sentenceTaskType,
 }: {
   assessmentId: string;
   words: PracticeWord[];
+  sentenceTaskType: SentenceTaskType;
 }) {
-  const [inputs, setInputs] = useState<Record<string, { pinyin: string; meaning: string }>>(
-    () => Object.fromEntries(words.map((w) => [w.id, { pinyin: "", meaning: "" }])),
+  const [inputs, setInputs] = useState<Record<string, RawInput>>(() =>
+    Object.fromEntries(words.map((w) => [w.id, { pinyin: "", meaning: "", sentence: "" }])),
   );
   const [result, setResult] = useState<PracticeResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function update(id: string, patch: Partial<{ pinyin: string; meaning: string }>) {
+  function update(id: string, patch: Partial<RawInput>) {
     setInputs((s) => ({ ...s, [id]: { ...s[id]!, ...patch } }));
   }
 
@@ -54,6 +65,7 @@ export function PracticeForm({
         studentPinyin: pinyin,
         studentTones: tones,
         studentMeaning: raw.meaning,
+        studentSentence: raw.sentence,
       };
     });
     try {
@@ -71,18 +83,20 @@ export function PracticeForm({
     setResult(null);
   }
 
-  const fbByWord = result
-    ? new Map(result.words.map((w) => [w.wordId, w]))
-    : null;
+  const fbByWord = result ? new Map(result.words.map((w) => [w.wordId, w])) : null;
 
   return (
     <form onSubmit={grade}>
       {result && (
         <div className="card" style={{ background: "var(--primary-weak)" }}>
-          <b>연습 결과</b> — 병음 {result.pinyinScore}/25 · 성조 {result.toneScore}/25
+          <b>연습 결과</b> — 병음 {result.pinyinScore}/25 · 성조 {result.toneScore}/25 · 의미{" "}
+          {result.meaningScore}/25 · 문장 {result.sentenceScore}/25
           <div className="muted" style={{ fontSize: 13 }}>
-            {result.reveal ? "정답이 함께 표시됩니다." : "정답은 비공개(교사 설정)입니다."} 무제한
-            연습 가능 — 틀린 부분을 고쳐 다시 풀어보세요.
+            {result.aiUsed
+              ? "AI 코칭이 적용되었습니다(의미·문장)."
+              : "AI 미적용 — 교사가 설정에서 API 키를 넣으면 의미·문장 코칭이 제공됩니다."}{" "}
+            {result.reveal ? "정답이 함께 표시됩니다." : "정답은 비공개입니다."} 무제한 연습 —
+            틀린 부분을 고쳐 다시 풀어보세요.
           </div>
           <button type="button" className="btn" style={{ marginTop: 8 }} onClick={retry}>
             다시 풀기
@@ -113,6 +127,7 @@ export function PracticeForm({
                   <Mark ok={fb.pinyinOk} label="병음" />
                   <Mark ok={fb.toneOk} label="성조" />
                   <Mark ok={fb.meaningOk} label="의미" />
+                  <Mark ok={fb.sentenceOk} label="문장" />
                 </div>
               )}
             </div>
@@ -135,6 +150,53 @@ export function PracticeForm({
                 <input value={raw.meaning} onChange={(e) => update(w.id, { meaning: e.target.value })} />
               </div>
             </div>
+
+            {sentenceTaskType === "find_error" && w.errorPrompt && (
+              <p className="muted" style={{ fontSize: 13 }}>제시 문장(오류 포함): {w.errorPrompt}</p>
+            )}
+            {sentenceTaskType === "judge" ? (
+              <div className="field">
+                {w.errorPrompt && (
+                  <p style={{ fontSize: 17, margin: "4px 0 8px" }}>제시 문장: {w.errorPrompt}</p>
+                )}
+                <label>이 문장이 어법에 맞습니까?</label>
+                <div className="row">
+                  <label style={{ display: "flex", gap: 6, alignItems: "center", width: "auto" }}>
+                    <input
+                      type="radio"
+                      name={`pjudge-${w.id}`}
+                      style={{ width: "auto" }}
+                      checked={raw.sentence === "O"}
+                      onChange={() => update(w.id, { sentence: "O" })}
+                    />
+                    맞음 (O)
+                  </label>
+                  <label style={{ display: "flex", gap: 6, alignItems: "center", width: "auto" }}>
+                    <input
+                      type="radio"
+                      name={`pjudge-${w.id}`}
+                      style={{ width: "auto" }}
+                      checked={raw.sentence === "X"}
+                      onChange={() => update(w.id, { sentence: "X" })}
+                    />
+                    안 맞음 (X)
+                  </label>
+                </div>
+              </div>
+            ) : (
+              <div className="field">
+                <label>
+                  {sentenceTaskType === "find_error"
+                    ? "오류를 고친 문장"
+                    : `이 단어(${w.hanzi})로 어법에 맞는 문장 작성`}
+                </label>
+                <textarea
+                  rows={2}
+                  value={raw.sentence}
+                  onChange={(e) => update(w.id, { sentence: e.target.value })}
+                />
+              </div>
+            )}
 
             {fb && fb.issues.length > 0 && (
               <ul className="error" style={{ fontSize: 13, marginTop: 4 }}>
@@ -161,18 +223,19 @@ export function PracticeForm({
   );
 }
 
-function Mark({ ok, label }: { ok: boolean; label: string }) {
+function Mark({ ok, label }: { ok: boolean | null; label: string }) {
+  const neutral = ok === null;
   return (
     <span
       style={{
         fontSize: 12,
         padding: "2px 8px",
         borderRadius: 999,
-        background: ok ? "#e6f4ea" : "#fae6e3",
-        color: ok ? "var(--ok)" : "var(--primary)",
+        background: neutral ? "#eee" : ok ? "#e6f4ea" : "#fae6e3",
+        color: neutral ? "var(--muted)" : ok ? "var(--ok)" : "var(--primary)",
       }}
     >
-      {label} {ok ? "✓" : "✗"}
+      {label} {neutral ? "—" : ok ? "✓" : "✗"}
     </span>
   );
 }

@@ -54,6 +54,17 @@ async function resolveAiProvider(
   return undefined;
 }
 
+/**
+ * 학생 컨텍스트(연습 등)에서 세트 작성 교사의 AI 공급자(BYOK)를 해석한다.
+ * 정답키/키는 학생이 못 읽으므로 admin(service role)으로 해석하며, 캐싱 래핑된다.
+ */
+export async function resolveAiProviderForTeacher(
+  teacherId: string,
+): Promise<AiGradingProvider | undefined> {
+  const admin = createSupabaseAdminClient();
+  return resolveAiProvider(admin, teacherId);
+}
+
 export function toGradingConfig(a: Assessment): GradingConfigInput {
   return {
     pinyinErrorUnit: a.pinyin_error_unit,
@@ -114,6 +125,8 @@ export async function gradeSubmissionById(submissionId: string): Promise<void> {
       ...(k?.acceptable_corrections
         ? { acceptableCorrections: k.acceptable_corrections }
         : {}),
+      ...(k?.is_grammatical != null ? { grammatical: k.is_grammatical } : {}),
+      ...(k?.explanation ? { explanation: k.explanation } : {}),
     };
   });
 

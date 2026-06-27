@@ -55,7 +55,7 @@ export function TakeForm({
 }: {
   assessmentId: string;
   words: TakeWord[];
-  sentenceTaskType: "compose" | "find_error";
+  sentenceTaskType: "compose" | "find_error" | "judge";
   timeLimitSec: number | null;
   proctoring: boolean;
 }) {
@@ -212,6 +212,9 @@ export function TakeForm({
             <div className="row" style={{ alignItems: "baseline" }}>
               <span className="muted">{i + 1}.</span>
               <span style={{ fontSize: 26, fontWeight: 700 }}>{w.hanzi}</span>
+              {(sentenceTaskType === "compose" || sentenceTaskType === "judge") && (
+                <span className="badge">제시 단어</span>
+              )}
             </div>
             {sentenceTaskType === "find_error" && w.errorPrompt && (
               <p className="muted">제시 문장(오류 포함): {w.errorPrompt}</p>
@@ -234,16 +237,61 @@ export function TakeForm({
                 <input value={raw.meaning} onChange={(e) => update(w.id, { meaning: e.target.value })} />
               </div>
             </div>
-            <div className="field">
-              <label>
-                {sentenceTaskType === "find_error" ? "오류를 고친 문장" : "이 단어로 문장 작성"}
-              </label>
-              <textarea
-                rows={2}
-                value={raw.sentence}
-                onChange={(e) => update(w.id, { sentence: e.target.value })}
-              />
-            </div>
+            {sentenceTaskType === "judge" ? (
+              <div className="field">
+                {w.errorPrompt && (
+                  <p style={{ fontSize: 18, margin: "4px 0 8px" }}>
+                    제시 문장: {w.errorPrompt}
+                  </p>
+                )}
+                <label>이 문장이 어법에 맞습니까?</label>
+                <div className="row">
+                  <label style={{ display: "flex", gap: 6, alignItems: "center", width: "auto" }}>
+                    <input
+                      type="radio"
+                      name={`judge-${w.id}`}
+                      style={{ width: "auto" }}
+                      checked={raw.sentence === "O"}
+                      onChange={() => update(w.id, { sentence: "O" })}
+                    />
+                    맞음 (O)
+                  </label>
+                  <label style={{ display: "flex", gap: 6, alignItems: "center", width: "auto" }}>
+                    <input
+                      type="radio"
+                      name={`judge-${w.id}`}
+                      style={{ width: "auto" }}
+                      checked={raw.sentence === "X"}
+                      onChange={() => update(w.id, { sentence: "X" })}
+                    />
+                    안 맞음 (X)
+                  </label>
+                </div>
+              </div>
+            ) : (
+              <div className="field">
+                <label>
+                  {sentenceTaskType === "find_error"
+                    ? "오류를 고친 문장"
+                    : `이 단어(${w.hanzi})를 활용하여 어법에 맞는 문장을 작성하세요`}
+                </label>
+                <textarea
+                  rows={2}
+                  value={raw.sentence}
+                  onChange={(e) => update(w.id, { sentence: e.target.value })}
+                  placeholder={
+                    sentenceTaskType === "compose"
+                      ? `${w.hanzi}(을)를 넣어 문장을 만들어 보세요`
+                      : undefined
+                  }
+                />
+                {sentenceTaskType === "compose" && (
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {raw.sentence.length}자 · 어법(어순·양사·시제 등) 오류 수로 채점됩니다
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
