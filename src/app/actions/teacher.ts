@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  createSupabaseServerClient,
+  createSupabaseAdminClient,
+} from "@/lib/supabase/server";
 import { gradeSubmissionById } from "@/lib/grading-bridge";
 import { mapErrorsToScore } from "@/grading/scale.js";
 import { encryptSecret, decryptSecret, lastFour } from "@/lib/crypto";
@@ -487,6 +490,56 @@ export async function regradeSubmission(submissionId: string) {
 
   await gradeSubmissionById(submissionId);
   revalidatePath(`/teacher`);
+}
+
+/**
+ * 제출물 돌려주기(반려): status→in_progress, 점수 확정 해제(teacher_finalized→false),
+ * 반려 시각·메모 기록. 학생은 답안을 고쳐 재제출하거나 그 세트를 연습할 수 있다.
+ * 교사는 RLS상 submissions를 SELECT만 가능하므로 상태 변경은 admin으로 수행한다(소유권 검증 후).
+ */
+export async function returnSubmission(submissionId: string, note: string) {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("로그인이 필요합니다");
+
+  // 본인 평가의 제출인지 확인(submissions_teacher_read RLS도 강제)
+  const { data: sub } = await supabase
+    .from("submissions")
+    .select("id, assessment_id, status")
+    .eq("id", submissionId)
+    .single<{ id: string; assessment_id: string; status: string }>();
+  if (!sub) throw new Error("제출물을 찾을 수 없습니다");
+  if (sub.status === "in_progress") {
+    throw new Error("아직 제출되지 않은 답안입니다");
+  }
+  const { data: assessment } = await supabase
+    .from("assessments")
+    .select("id, teacher_id")
+    .eq("id", sub.assessment_id)
+    .single<{ id: string; teacher_id: string }>();
+  if (!assessment || assessment.teacher_id !== user.id) {
+    throw new Error("권한이 없습니다");
+  }
+
+  // 상태 변경은 admin(service role)으로(교사는 submissions update RLS 없음)
+  const admin = createSupabaseAdminClient();
+  await admin
+    .from("submissions")
+    .update({
+      status: "in_progress",
+      returned_at: new Date().toISOString(),
+      returned_note: note.trim() || null,
+    })
+    .eq("id", submissionId);
+  await admin
+    .from("grades")
+    .update({ teacher_finalized: false })
+    .eq("submission_id", submissionId);
+
+  revalidatePath(`/teacher/${sub.assessment_id}`);
+  revalidatePath(`/teacher/${sub.assessment_id}/monitor`);
 }
 
 // ───────────────────── 교사 API 키(BYOK) ─────────────────────

@@ -9,6 +9,7 @@ import {
   unpublishAssessment,
 } from "@/app/actions/teacher";
 import { FinalizeControls } from "@/components/FinalizeControls";
+import { ReturnControls } from "@/components/ReturnControls";
 import type {
   Assessment,
   Grade,
@@ -179,6 +180,17 @@ export default async function AssessmentDetail({
                     sentenceDetails={details?.sentence}
                   />
                 </>
+              )}
+              {s.status !== "in_progress" ? (
+                <div style={{ marginTop: 8 }}>
+                  <ReturnControls submissionId={s.id} />
+                </div>
+              ) : (
+                s.returned_at && (
+                  <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+                    ↩ 돌려줌 — 학생 재제출/연습 대기 중
+                  </p>
+                )
               )}
             </div>
           );

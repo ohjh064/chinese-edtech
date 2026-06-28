@@ -126,8 +126,13 @@ create table if not exists submissions (
   status submission_status not null default 'in_progress',
   attendance attendance_status not null default 'attempted',
   started_at timestamptz not null default now(),
-  submitted_at timestamptz
+  submitted_at timestamptz,
+  returned_at timestamptz,            -- 교사 돌려주기(반려) 시각
+  returned_note text                  -- 돌려주기 사유/코멘트(학생 노출)
 );
+-- 기존 DB 업그레이드(멱등)
+alter table submissions add column if not exists returned_at timestamptz;
+alter table submissions add column if not exists returned_note text;
 
 create table if not exists answers (
   id uuid primary key default gen_random_uuid(),

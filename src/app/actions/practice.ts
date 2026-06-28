@@ -85,9 +85,20 @@ export async function gradePracticeAttempt(
     .eq("id", assessmentId)
     .single<Assessment>();
   if (!assessment) throw new Error("연습할 수 없는 평가입니다");
-  if (!(assessment.mode === "practice" || assessment.allow_practice)) {
-    throw new Error("연습이 허용되지 않은 평가입니다");
+  // 연습 허용: 연습 전용 / 교사 연습 허용 / 교사가 돌려준(반려) 학생
+  let canPractice = assessment.mode === "practice" || assessment.allow_practice;
+  if (!canPractice) {
+    const { data: returned } = await supabase
+      .from("submissions")
+      .select("id")
+      .eq("assessment_id", assessmentId)
+      .eq("student_id", user.id)
+      .not("returned_at", "is", null)
+      .limit(1)
+      .maybeSingle();
+    canPractice = !!returned;
   }
+  if (!canPractice) throw new Error("연습이 허용되지 않은 평가입니다");
 
   const config = resolveConfig(toGradingConfig(assessment));
 

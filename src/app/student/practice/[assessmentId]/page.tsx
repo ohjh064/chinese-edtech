@@ -29,10 +29,20 @@ export default async function PracticePage({
     .eq("id", assessmentId)
     .single<Assessment>();
   if (!assessment) redirect("/student");
-  // 연습 허용 세트만(연습 전용 또는 교사가 연습 허용한 시험 세트)
-  if (!(assessment.mode === "practice" || assessment.allow_practice)) {
-    redirect("/student");
+  // 연습 허용 세트만(연습 전용 / 교사가 연습 허용 / 교사가 돌려준(반려) 학생)
+  let canPractice = assessment.mode === "practice" || assessment.allow_practice;
+  if (!canPractice) {
+    const { data: returned } = await supabase
+      .from("submissions")
+      .select("id")
+      .eq("assessment_id", assessmentId)
+      .eq("student_id", user.id)
+      .not("returned_at", "is", null)
+      .limit(1)
+      .maybeSingle();
+    canPractice = !!returned;
   }
+  if (!canPractice) redirect("/student");
 
   const { data: wordRows } = await supabase
     .from("words")

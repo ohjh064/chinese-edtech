@@ -79,6 +79,8 @@ export interface Submission {
   attendance: AttendanceStatusDb;
   started_at: string;
   submitted_at: string | null;
+  returned_at: string | null;
+  returned_note: string | null;
 }
 
 export interface Answer {

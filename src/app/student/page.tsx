@@ -35,6 +35,12 @@ export default async function StudentDashboard() {
   for (const s of (mySubs ?? []) as Submission[]) {
     subByAssessment.set(s.assessment_id, s);
   }
+  // 교사가 돌려준(반려) 세트 — 재제출/연습 가능
+  const returnedAssessmentIds = new Set(
+    ((mySubs ?? []) as Submission[])
+      .filter((s) => s.returned_at)
+      .map((s) => s.assessment_id),
+  );
 
   // 연습 약점 복습 추천 (PRD §6.1)
   const { data: logs } = await supabase
@@ -57,7 +63,10 @@ export default async function StudentDashboard() {
   // 추천 단어의 평가가 현재 연습 가능한지(RLS로 조회되면 가능)
   const practiceableAssessmentIds = new Set(
     (assessments as Assessment[] | null)
-      ?.filter((a) => a.mode === "practice" || a.allow_practice)
+      ?.filter(
+        (a) =>
+          a.mode === "practice" || a.allow_practice || returnedAssessmentIds.has(a.id),
+      )
       .map((a) => a.id) ?? [],
   );
 
@@ -112,11 +121,16 @@ export default async function StudentDashboard() {
           const sub = subByAssessment.get(a.id);
           const done = sub && sub.status !== "in_progress";
           const isPractice = a.mode === "practice";
+          const returned = !!sub?.returned_at && sub.status === "in_progress";
+          const canPractice = a.allow_practice || returnedAssessmentIds.has(a.id);
           return (
             <div className="card" key={a.id}>
               <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
                 <div>
-                  <div style={{ fontSize: 17, fontWeight: 600 }}>{a.title}</div>
+                  <div style={{ fontSize: 17, fontWeight: 600 }}>
+                    {a.title}
+                    {returned && <span className="badge" style={{ marginLeft: 8 }}>돌려받음</span>}
+                  </div>
                   <div className="muted" style={{ fontSize: 13 }}>
                     {a.unit} · {isPractice ? "연습" : "평가"}
                     {a.time_limit_sec ? ` · ${Math.round(a.time_limit_sec / 60)}분` : ""}
@@ -134,10 +148,10 @@ export default async function StudentDashboard() {
                       </Link>
                     ) : (
                       <Link className="btn" href={`/student/take/${a.id}`}>
-                        {sub ? "이어서 응시" : "응시 시작"}
+                        {sub ? (returned ? "다시 제출하기" : "이어서 응시") : "응시 시작"}
                       </Link>
                     )}
-                    {a.allow_practice && (
+                    {canPractice && (
                       <Link className="btn secondary" href={`/student/practice/${a.id}`}>
                         연습하기
                       </Link>
@@ -145,6 +159,12 @@ export default async function StudentDashboard() {
                   </div>
                 )}
               </div>
+              {returned && (
+                <p className="muted" style={{ fontSize: 13, margin: "8px 0 0" }}>
+                  ↩ 교사가 돌려줬습니다.
+                  {sub?.returned_note ? ` 코멘트: ${sub.returned_note}` : " 답안을 고쳐 다시 제출하거나 연습해 보세요."}
+                </p>
+              )}
             </div>
           );
         })}
