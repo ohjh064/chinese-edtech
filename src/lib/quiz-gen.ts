@@ -26,6 +26,7 @@ export interface QuizItem {
 
 export interface QuizQuestion {
   wordId: string;
+  hanzi: string; // 발음 듣기(TTS)용 — 문제의 대상 단어
   prompt: string;
   promptHint?: string;
   options: string[];
@@ -137,7 +138,7 @@ export function buildQuestions(items: QuizItem[], opts: BuildOptions): QuizQuest
 
   for (const it of items) {
     const q = buildOne(it, items, opts.mode, direction, opts.sentenceTaskType, rng);
-    if (q) out.push(q);
+    if (q) out.push({ ...q, hanzi: it.hanzi });
   }
   return shuffle(out, rng);
 }
@@ -149,7 +150,7 @@ function buildOne(
   direction: QuizDirection,
   sentenceTaskType: SentenceTaskTypeDb | undefined,
   rng: () => number,
-): QuizQuestion | null {
+): Omit<QuizQuestion, "hanzi"> | null {
   if (mode === "meaning") {
     const meaning = (it.meanings ?? []).find((m) => m.trim());
     if (!meaning || !it.hanzi) return null;

@@ -8,6 +8,7 @@ import {
   type Leaderboard,
 } from "@/app/actions/quiz";
 import type { QuizMode, QuizDirection, QuizQuestion } from "@/lib/quiz-gen";
+import { SpeakButton } from "@/components/SpeakButton";
 
 const MODES: { key: QuizMode; label: string }[] = [
   { key: "meaning", label: "의미" },
@@ -346,7 +347,11 @@ export function QuizGame({ assessmentId, title }: { assessmentId: string; title:
                 {picked === current.correctIndex ? "정답!" : picked === null ? "시간 초과/모름" : "오답"}
                 {current.explain ? ` · ${current.explain}` : ""}
               </p>
-              <button className="btn" type="button" onClick={nextQuestion}>다음 (Enter)</button>
+              <div className="row" style={{ alignItems: "center", gap: 8 }}>
+                <span className="muted" style={{ fontSize: 14 }}>{current.hanzi}</span>
+                <SpeakButton hanzi={current.hanzi} />
+                <button className="btn" type="button" onClick={nextQuestion}>다음 (Enter)</button>
+              </div>
             </div>
           )}
 

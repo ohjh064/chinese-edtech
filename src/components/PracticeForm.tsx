@@ -7,6 +7,7 @@ import {
   type PracticeAnswerInput,
   type PracticeResult,
 } from "@/app/actions/practice";
+import { SpeakButton } from "@/components/SpeakButton";
 
 export interface PracticeWord {
   id: string;
@@ -118,9 +119,10 @@ export function PracticeForm({
         return (
           <div className="card" key={w.id}>
             <div className="row" style={{ alignItems: "baseline", justifyContent: "space-between" }}>
-              <div className="row" style={{ alignItems: "baseline" }}>
+              <div className="row" style={{ alignItems: "center" }}>
                 <span className="muted">{i + 1}.</span>
                 <span style={{ fontSize: 26, fontWeight: 700 }}>{w.hanzi}</span>
+                <SpeakButton hanzi={w.hanzi} />
               </div>
               {fb && (
                 <div className="row">

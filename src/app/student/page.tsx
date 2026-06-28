@@ -144,6 +144,9 @@ export default async function StudentDashboard() {
                     <Link className="btn secondary" href={`/student/quiz/${a.id}`}>
                       퀴즈
                     </Link>
+                    <Link className="btn secondary" href={`/student/flashcards/${a.id}`}>
+                      플래시카드
+                    </Link>
                   </div>
                 ) : (
                   <div className="row" style={{ gap: 8, alignItems: "center" }}>
@@ -163,6 +166,9 @@ export default async function StudentDashboard() {
                         </Link>
                         <Link className="btn secondary" href={`/student/quiz/${a.id}`}>
                           퀴즈
+                        </Link>
+                        <Link className="btn secondary" href={`/student/flashcards/${a.id}`}>
+                          플래시카드
                         </Link>
                       </>
                     )}
