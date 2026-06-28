@@ -7,7 +7,7 @@
  */
 
 /** 성모 목록(긴 것 우선 매칭). y/w 포함해 일관 처리. */
-const INITIALS = [
+export const INITIALS = [
   "zh",
   "ch",
   "sh",

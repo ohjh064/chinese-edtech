@@ -335,6 +335,32 @@ drop policy if exists practice_logs_teacher_read on practice_logs;
 create policy practice_logs_teacher_read on practice_logs for select
   using (is_teacher());
 
+-- ──────────────── 영역별 퀴즈 게임 점수/리더보드 ────────────────
+create table if not exists quiz_scores (
+  id uuid primary key default gen_random_uuid(),
+  assessment_id uuid not null references assessments(id) on delete cascade,
+  student_id uuid not null references profiles(id) on delete cascade,
+  mode text not null,                 -- 'pinyin' | 'tone' | 'meaning' | 'sentence'
+  score int not null,
+  correct int not null default 0,
+  total int not null default 0,
+  played_at timestamptz not null default now()
+);
+create index if not exists idx_quiz_scores_lookup on quiz_scores(assessment_id, mode, score desc);
+create index if not exists idx_quiz_scores_student on quiz_scores(student_id, played_at desc);
+
+alter table quiz_scores enable row level security;
+-- 학생 본인 것 insert/read, 교사 본인 평가 read. 리더보드 타인 조회는 admin(service role).
+drop policy if exists quiz_scores_student_ins on quiz_scores;
+create policy quiz_scores_student_ins on quiz_scores for insert
+  with check (student_id = auth.uid());
+drop policy if exists quiz_scores_student_read on quiz_scores;
+create policy quiz_scores_student_read on quiz_scores for select
+  using (student_id = auth.uid());
+drop policy if exists quiz_scores_teacher_read on quiz_scores;
+create policy quiz_scores_teacher_read on quiz_scores for select
+  using (owns_assessment(assessment_id));
+
 -- ──────────────── 교사 API 키(BYOK) — 암호화 저장 ────────────────
 -- 교사가 본인 Anthropic API 키를 입력하면, 그 교사/학생의 AI 채점 비용은
 -- 그 키(교사 계정)로 과금된다. 운영자 단일 키 부담 제거(무료 배포 목적).

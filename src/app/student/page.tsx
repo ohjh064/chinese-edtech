@@ -137,9 +137,14 @@ export default async function StudentDashboard() {
                   </div>
                 </div>
                 {isPractice ? (
-                  <Link className="btn" href={`/student/practice/${a.id}`}>
-                    연습하기
-                  </Link>
+                  <div className="row" style={{ gap: 8, alignItems: "center" }}>
+                    <Link className="btn" href={`/student/practice/${a.id}`}>
+                      연습하기
+                    </Link>
+                    <Link className="btn secondary" href={`/student/quiz/${a.id}`}>
+                      퀴즈
+                    </Link>
+                  </div>
                 ) : (
                   <div className="row" style={{ gap: 8, alignItems: "center" }}>
                     {done ? (
@@ -152,9 +157,14 @@ export default async function StudentDashboard() {
                       </Link>
                     )}
                     {canPractice && (
-                      <Link className="btn secondary" href={`/student/practice/${a.id}`}>
-                        연습하기
-                      </Link>
+                      <>
+                        <Link className="btn secondary" href={`/student/practice/${a.id}`}>
+                          연습하기
+                        </Link>
+                        <Link className="btn secondary" href={`/student/quiz/${a.id}`}>
+                          퀴즈
+                        </Link>
+                      </>
                     )}
                   </div>
                 )}
