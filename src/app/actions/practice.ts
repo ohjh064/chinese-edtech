@@ -270,6 +270,32 @@ export async function gradePracticeAttempt(
     /* 무시 */
   }
 
+  // 오답노트 동기화(§13) — 영역별 오답 누적·정답 시 해결. best-effort.
+  // 정답 비공개 상태(미제출 시험 등 reveal=false)에서는 기록하지 않는다 —
+  // 맞춤 출제(정답키 그라운딩)로 시험 정답이 사전 노출되는 것을 차단.
+  try {
+    const items = reveal ? words_fb.flatMap((fb) => {
+      const rows: { kind: string; label: string; detail: string; word_id: string; wrong: boolean }[] = [
+        { kind: "pinyin", label: fb.hanzi, detail: "병음 오류", word_id: fb.wordId, wrong: !fb.pinyinOk },
+        { kind: "tone", label: fb.hanzi, detail: "성조 오류", word_id: fb.wordId, wrong: !fb.toneOk },
+        { kind: "meaning", label: fb.hanzi, detail: "의미 오류", word_id: fb.wordId, wrong: !fb.meaningOk },
+      ];
+      // 문장 영역: 자동 채점 가능할 때만(작문형+AI 미적용은 null → 제외)
+      if (fb.sentenceOk !== null) {
+        rows.push({ kind: "grammar", label: fb.hanzi, detail: "문장 어법 오류", word_id: fb.wordId, wrong: !fb.sentenceOk });
+      }
+      return rows;
+    }) : [];
+    if (items.length) {
+      await supabase.rpc("sync_practice_mistakes", {
+        p_teacher: assessment.teacher_id,
+        p_items: items,
+      });
+    }
+  } catch {
+    /* 무시 */
+  }
+
   return {
     reveal,
     aiUsed,

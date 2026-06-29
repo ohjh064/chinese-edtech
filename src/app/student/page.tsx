@@ -75,6 +75,9 @@ export default async function StudentDashboard() {
       <Topbar name={profile?.name || "학생"} role="student" home="/student" />
       <div className="container">
         <div className="row" style={{ justifyContent: "flex-end" }}>
+          <Link className="btn secondary" href="/student/notebook">
+            AI 오답노트
+          </Link>
           <Link className="btn" href="/student/learn">
             회화 학습 →
           </Link>

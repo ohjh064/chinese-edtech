@@ -215,3 +215,19 @@ export interface LevelProgress {
   attempts: number;
   updated_at: string;
 }
+
+export type MistakeKind = "pinyin" | "tone" | "meaning" | "grammar" | "expression";
+
+export interface Mistake {
+  id: string;
+  student_id: string;
+  teacher_id: string | null;
+  word_id: string | null;
+  kind: MistakeKind;
+  label: string;
+  detail: string | null;
+  count: number;
+  resolved: boolean;
+  created_at: string;
+  last_at: string;
+}

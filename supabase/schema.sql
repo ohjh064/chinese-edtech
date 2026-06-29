@@ -543,6 +543,53 @@ drop policy if exists level_progress_student_all on level_progress;
 create policy level_progress_student_all on level_progress for all
   using (student_id = auth.uid()) with check (student_id = auth.uid());
 
+-- ──────────────── Phase 4: AI 오답노트(§13) ────────────────
+create table if not exists mistakes (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references profiles(id) on delete cascade,
+  teacher_id uuid references profiles(id) on delete set null,
+  word_id uuid references words(id) on delete set null,
+  kind text not null,
+  label text not null,
+  detail text,
+  count int not null default 1,
+  resolved boolean not null default false,
+  created_at timestamptz not null default now(),
+  last_at timestamptz not null default now(),
+  unique (student_id, kind, label)
+);
+create index if not exists idx_mistakes_student on mistakes(student_id, resolved, last_at desc);
+alter table mistakes enable row level security;
+drop policy if exists mistakes_student_all on mistakes;
+create policy mistakes_student_all on mistakes for all
+  using (student_id = auth.uid()) with check (student_id = auth.uid());
+create or replace function sync_practice_mistakes(p_teacher uuid, p_items jsonb)
+returns void language plpgsql security definer set search_path = public as $$
+declare it jsonb;
+begin
+  if auth.uid() is null then
+    raise exception 'auth required';
+  end if;
+  for it in select * from jsonb_array_elements(coalesce(p_items, '[]'::jsonb)) loop
+    if coalesce((it->>'wrong')::boolean, false) then
+      insert into mistakes (student_id, teacher_id, word_id, kind, label, detail, count, resolved, last_at)
+      values (auth.uid(), p_teacher, nullif(it->>'word_id','')::uuid, it->>'kind', it->>'label', it->>'detail', 1, false, now())
+      on conflict (student_id, kind, label) do update
+        set count = mistakes.count + 1,
+            resolved = false,
+            last_at = now(),
+            detail = excluded.detail,
+            word_id = coalesce(excluded.word_id, mistakes.word_id),
+            teacher_id = coalesce(excluded.teacher_id, mistakes.teacher_id);
+    else
+      update mistakes set resolved = true, last_at = now()
+      where student_id = auth.uid() and kind = it->>'kind' and label = it->>'label' and not resolved;
+    end if;
+  end loop;
+end; $$;
+revoke all on function sync_practice_mistakes(uuid, jsonb) from public;
+grant execute on function sync_practice_mistakes(uuid, jsonb) to authenticated;
+
 -- ──────────────── 교사 API 키(BYOK) — 암호화 저장 ────────────────
 -- 교사가 본인 Anthropic API 키를 입력하면, 그 교사/학생의 AI 채점 비용은
 -- 그 키(교사 계정)로 과금된다. 운영자 단일 키 부담 제거(무료 배포 목적).
