@@ -452,6 +452,44 @@ create policy questions_teacher_all on questions for all
   using (exists (select 1 from situations s where s.id = situation_id and owns_unit(s.unit_id)))
   with check (exists (select 1 from situations s where s.id = situation_id and owns_unit(s.unit_id)));
 
+-- ──────────────── v2 Phase 2: AI 롤플레이 회화 ────────────────
+create table if not exists conversations (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references profiles(id) on delete cascade,
+  situation_id uuid not null references situations(id) on delete cascade,
+  mode text not null default 'roleplay',
+  status text not null default 'active',
+  turns int not null default 0,
+  created_at timestamptz not null default now()
+);
+create table if not exists messages (
+  id uuid primary key default gen_random_uuid(),
+  conversation_id uuid not null references conversations(id) on delete cascade,
+  role text not null,
+  content_zh text,
+  content_ko text,
+  feedback jsonb,
+  scaffold_level int,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_conversations_student on conversations(student_id, situation_id);
+create index if not exists idx_messages_conversation on messages(conversation_id, created_at);
+
+alter table conversations enable row level security;
+alter table messages      enable row level security;
+
+drop policy if exists conversations_student_all on conversations;
+create policy conversations_student_all on conversations for all
+  using (student_id = auth.uid())
+  with check (
+    student_id = auth.uid()
+    and exists (select 1 from situations s where s.id = situation_id and can_view_unit(s.unit_id))
+  );
+drop policy if exists messages_student_all on messages;
+create policy messages_student_all on messages for all
+  using (exists (select 1 from conversations c where c.id = conversation_id and c.student_id = auth.uid()))
+  with check (exists (select 1 from conversations c where c.id = conversation_id and c.student_id = auth.uid()));
+
 -- ──────────────── 교사 API 키(BYOK) — 암호화 저장 ────────────────
 -- 교사가 본인 Anthropic API 키를 입력하면, 그 교사/학생의 AI 채점 비용은
 -- 그 키(교사 계정)로 과금된다. 운영자 단일 키 부담 제거(무료 배포 목적).

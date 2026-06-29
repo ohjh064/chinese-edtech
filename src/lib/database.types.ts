@@ -165,3 +165,24 @@ export interface Question {
   model_answer_ko: string | null;
   ord: number;
 }
+
+export interface Conversation {
+  id: string;
+  student_id: string;
+  situation_id: string;
+  mode: string;
+  status: string;
+  turns: number;
+  created_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversation_id: string;
+  role: "student" | "ai";
+  content_zh: string | null;
+  content_ko: string | null;
+  feedback: unknown;
+  scaffold_level: number | null;
+  created_at: string;
+}

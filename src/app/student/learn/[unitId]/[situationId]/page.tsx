@@ -74,10 +74,17 @@ export default async function LearnSituationPage({
         ))}
 
         <div className="card" style={{ background: "var(--primary-weak)" }}>
-          <b>AI 롤플레이 대화</b>
-          <p className="muted" style={{ fontSize: 13, margin: "4px 0 0" }}>
-            이 상황으로 AI와 직접 대화하는 기능은 곧 제공됩니다(Phase 2).
-          </p>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <b>AI 롤플레이 대화</b>
+              <p className="muted" style={{ fontSize: 13, margin: "4px 0 0" }}>
+                이 상황으로 AI와 직접 대화하며 1:1 코칭을 받아보세요.
+              </p>
+            </div>
+            <Link className="btn" href={`/student/learn/${unitId}/${situationId}/roleplay`}>
+              대화 시작 →
+            </Link>
+          </div>
         </div>
       </div>
     </>
