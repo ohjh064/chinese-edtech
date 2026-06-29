@@ -186,3 +186,31 @@ export interface ChatMessage {
   scaffold_level: number | null;
   created_at: string;
 }
+
+export interface SentenceItem {
+  id: string;
+  situation_id: string;
+  target_zh: string;
+  target_ko: string | null;
+  tokens: string[];
+  difficulty: Difficulty;
+  ord: number;
+}
+
+export interface BossMission {
+  id: string;
+  situation_id: string;
+  description: string | null;
+  steps: string[];
+  created_at: string;
+}
+
+export interface LevelProgress {
+  id: string;
+  student_id: string;
+  situation_id: string;
+  activity: string;
+  cleared: boolean;
+  score: number;
+  updated_at: string;
+}

@@ -490,6 +490,57 @@ create policy messages_student_all on messages for all
   using (exists (select 1 from conversations c where c.id = conversation_id and c.student_id = auth.uid()))
   with check (exists (select 1 from conversations c where c.id = conversation_id and c.student_id = auth.uid()));
 
+-- ──────────────── v2 Phase 3: Sentence Builder · Boss · 진척 ────────────────
+create table if not exists sentence_items (
+  id uuid primary key default gen_random_uuid(),
+  situation_id uuid not null references situations(id) on delete cascade,
+  target_zh text not null,
+  target_ko text,
+  tokens text[] not null default '{}',
+  difficulty text not null default 'normal',
+  ord int not null default 0
+);
+create table if not exists boss_missions (
+  id uuid primary key default gen_random_uuid(),
+  situation_id uuid not null references situations(id) on delete cascade unique,
+  description text,
+  steps text[] not null default '{}',
+  created_at timestamptz not null default now()
+);
+create table if not exists level_progress (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references profiles(id) on delete cascade,
+  situation_id uuid not null references situations(id) on delete cascade,
+  activity text not null,
+  cleared boolean not null default false,
+  score int not null default 0,
+  updated_at timestamptz not null default now(),
+  unique (student_id, situation_id, activity)
+);
+create index if not exists idx_sentence_items_situation on sentence_items(situation_id, ord);
+create index if not exists idx_level_progress_student on level_progress(student_id, situation_id);
+
+alter table sentence_items enable row level security;
+alter table boss_missions  enable row level security;
+alter table level_progress enable row level security;
+
+drop policy if exists sentence_items_teacher_all on sentence_items;
+create policy sentence_items_teacher_all on sentence_items for all
+  using (exists (select 1 from situations s where s.id = situation_id and owns_unit(s.unit_id)))
+  with check (exists (select 1 from situations s where s.id = situation_id and owns_unit(s.unit_id)));
+
+drop policy if exists boss_missions_teacher_all on boss_missions;
+create policy boss_missions_teacher_all on boss_missions for all
+  using (exists (select 1 from situations s where s.id = situation_id and owns_unit(s.unit_id)))
+  with check (exists (select 1 from situations s where s.id = situation_id and owns_unit(s.unit_id)));
+drop policy if exists boss_missions_student_read on boss_missions;
+create policy boss_missions_student_read on boss_missions for select
+  using (exists (select 1 from situations s where s.id = situation_id and can_view_unit(s.unit_id)));
+
+drop policy if exists level_progress_student_all on level_progress;
+create policy level_progress_student_all on level_progress for all
+  using (student_id = auth.uid()) with check (student_id = auth.uid());
+
 -- ──────────────── 교사 API 키(BYOK) — 암호화 저장 ────────────────
 -- 교사가 본인 Anthropic API 키를 입력하면, 그 교사/학생의 AI 채점 비용은
 -- 그 키(교사 계정)로 과금된다. 운영자 단일 키 부담 제거(무료 배포 목적).

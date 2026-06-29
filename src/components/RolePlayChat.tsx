@@ -3,8 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import {
   sendTurn,
+  evaluateBoss,
   type HistoryItem,
   type TurnFeedback,
+  type BossEvaluation,
 } from "@/app/actions/roleplay";
 import { SpeakButton } from "@/components/SpeakButton";
 
@@ -20,11 +22,13 @@ export function RolePlayChat({
   initialHistory,
   initialTurnsLeft,
   initialDone,
+  boss,
 }: {
   conversationId: string;
   initialHistory: HistoryItem[];
   initialTurnsLeft: number;
   initialDone: boolean;
+  boss?: { description: string | null; steps: string[] };
 }) {
   const [bubbles, setBubbles] = useState<Bubble[]>(initialHistory);
   const [input, setInput] = useState("");
@@ -33,8 +37,22 @@ export function RolePlayChat({
   const [turnsLeft, setTurnsLeft] = useState(initialTurnsLeft);
   const [done, setDone] = useState(initialDone);
   const [hintLevel, setHintLevel] = useState(0);
+  const [evalResult, setEvalResult] = useState<BossEvaluation | null>(null);
+  const [evaluating, setEvaluating] = useState(false);
   const greeted = useRef(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  async function evaluate() {
+    setEvaluating(true);
+    setError(null);
+    try {
+      setEvalResult(await evaluateBoss(conversationId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "평가 실패");
+    } finally {
+      setEvaluating(false);
+    }
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -95,9 +113,32 @@ export function RolePlayChat({
   return (
     <div>
       <div className="card row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <span className="badge">롤플레이 대화</span>
+        <span className="badge">{boss ? "보스 미션" : "롤플레이 대화"}</span>
         <span className="muted" style={{ fontSize: 13 }}>남은 대화 {turnsLeft}턴</span>
       </div>
+
+      {boss && (
+        <div className="card" style={{ background: "var(--primary-weak)" }}>
+          <b>미션</b>
+          {boss.description && <p className="muted" style={{ fontSize: 14, margin: "4px 0" }}>{boss.description}</p>}
+          {boss.steps.length > 0 && (
+            <ol style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+              {boss.steps.map((s, i) => (<li key={i} style={{ fontSize: 14 }}>{s}</li>))}
+            </ol>
+          )}
+          <p className="muted" style={{ fontSize: 12, margin: "6px 0 0" }}>힌트 없이 미션을 수행한 뒤 평가를 받으세요.</p>
+        </div>
+      )}
+
+      {evalResult && (
+        <div className="card" style={{ borderColor: evalResult.passed ? "var(--ok)" : "var(--warn)" }}>
+          <b className={evalResult.passed ? "ok" : "error"}>{evalResult.passed ? "미션 성공!" : "미션 미완료"}</b>
+          <p style={{ fontSize: 14, margin: "4px 0" }}>{evalResult.summary}</p>
+          <ul className="muted" style={{ fontSize: 13, margin: 0, paddingLeft: 18 }}>
+            {evalResult.steps.map((s, i) => (<li key={i}>{s.done ? "✓" : "✗"} {s.label}</li>))}
+          </ul>
+        </div>
+      )}
 
       <div className="card" style={{ minHeight: 280, display: "flex", flexDirection: "column", gap: 12 }}>
         {bubbles.length === 0 && <p className="muted">대화를 시작합니다…</p>}
@@ -136,6 +177,12 @@ export function RolePlayChat({
 
       {error && <p className="error">{error}</p>}
 
+      {boss && (
+        <button className="btn" type="button" onClick={evaluate} disabled={evaluating} style={{ marginBottom: 12 }}>
+          {evaluating ? "평가 중…" : "미션 평가받기"}
+        </button>
+      )}
+
       {done ? (
         <div className="card" style={{ textAlign: "center" }}>
           <b>대화를 마쳤습니다.</b>
@@ -156,12 +203,16 @@ export function RolePlayChat({
               />
             </div>
             <button className="btn" type="button" onClick={send} disabled={busy || !input.trim()}>전송</button>
-            <button className="btn secondary" type="button" onClick={askHint} disabled={busy} title="단계별 힌트(정답은 알려주지 않아요)">
-              힌트 {hintLevel > 0 ? `(${hintLevel}/5)` : ""}
-            </button>
+            {!boss && (
+              <button className="btn secondary" type="button" onClick={askHint} disabled={busy} title="단계별 힌트(정답은 알려주지 않아요)">
+                힌트 {hintLevel > 0 ? `(${hintLevel}/5)` : ""}
+              </button>
+            )}
           </div>
           <p className="muted" style={{ fontSize: 12, margin: "6px 0 0" }}>
-            AI는 정답을 통째로 알려주지 않고, 한 번에 한 가지만 고쳐줘요.
+            {boss
+              ? "힌트·교정 없이 미션을 수행한 뒤 '미션 평가받기'를 누르세요."
+              : "AI는 정답을 통째로 알려주지 않고, 한 번에 한 가지만 고쳐줘요."}
           </p>
         </div>
       )}

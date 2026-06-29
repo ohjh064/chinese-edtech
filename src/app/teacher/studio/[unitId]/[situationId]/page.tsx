@@ -3,8 +3,16 @@ import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Topbar } from "@/components/Topbar";
 import { SituationEditor } from "@/components/studio/SituationEditor";
-import type { ExpressionRow, QuestionRow } from "@/app/actions/studio";
-import type { Expression, Profile, Question, Situation, Unit } from "@/lib/database.types";
+import type { ExpressionRow, QuestionRow, SentenceRow } from "@/app/actions/studio";
+import type {
+  BossMission,
+  Expression,
+  Profile,
+  Question,
+  SentenceItem,
+  Situation,
+  Unit,
+} from "@/lib/database.types";
 
 export default async function StudioSituationPage({
   params,
@@ -63,6 +71,28 @@ export default async function StudioSituationPage({
     modelAnswerKo: q.model_answer_ko ?? "",
   }));
 
+  const { data: sentRows } = await supabase
+    .from("sentence_items")
+    .select("*")
+    .eq("situation_id", situationId)
+    .order("ord");
+  const initialSentenceItems: SentenceRow[] = ((sentRows ?? []) as SentenceItem[]).map((s) => ({
+    id: s.id,
+    targetZh: s.target_zh,
+    targetKo: s.target_ko ?? "",
+    tokens: (s.tokens ?? []).join(" / "),
+    difficulty: s.difficulty,
+  }));
+  const { data: bossRow } = await supabase
+    .from("boss_missions")
+    .select("*")
+    .eq("situation_id", situationId)
+    .maybeSingle<BossMission>();
+  const initialBoss = {
+    description: bossRow?.description ?? "",
+    steps: (bossRow?.steps ?? []).join("\n"),
+  };
+
   return (
     <>
       <Topbar name={profile.name || "교사"} role="teacher" home="/teacher" />
@@ -77,6 +107,8 @@ export default async function StudioSituationPage({
           situation={situation}
           initialExpressions={initialExpressions}
           initialQuestions={initialQuestions}
+          initialSentenceItems={initialSentenceItems}
+          initialBoss={initialBoss}
         />
       </div>
     </>

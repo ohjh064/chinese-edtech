@@ -8,6 +8,7 @@ import {
   generateSituation,
   type ExpressionRow,
   type QuestionRow,
+  type SentenceRow,
 } from "@/app/actions/studio";
 import { toDisplayWord } from "@/grading/pinyin.js";
 import type { Difficulty, Situation } from "@/lib/database.types";
@@ -23,12 +24,16 @@ export function SituationEditor({
   situation,
   initialExpressions,
   initialQuestions,
+  initialSentenceItems,
+  initialBoss,
 }: {
   unitId: string;
   unitTheme: string;
   situation: Situation;
   initialExpressions: ExpressionRow[];
   initialQuestions: QuestionRow[];
+  initialSentenceItems: SentenceRow[];
+  initialBoss: { description: string; steps: string };
 }) {
   const router = useRouter();
   const [title, setTitle] = useState(situation.title);
@@ -42,6 +47,9 @@ export function SituationEditor({
   const [questions, setQuestions] = useState<QuestionRow[]>(
     initialQuestions.length ? initialQuestions : [{ promptZh: "", promptKo: "", modelAnswerZh: "", modelAnswerKo: "" }],
   );
+  const [sentences, setSentences] = useState<SentenceRow[]>(initialSentenceItems);
+  const [bossDescription, setBossDescription] = useState(initialBoss.description);
+  const [bossSteps, setBossSteps] = useState(initialBoss.steps);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +93,9 @@ export function SituationEditor({
       setRoleAi(r.roleAi);
       setExprs(r.expressions.length ? r.expressions : exprs);
       setQuestions(r.questions.length ? r.questions : questions);
+      if (r.sentenceItems.length) setSentences(r.sentenceItems);
+      if (r.bossDescription) setBossDescription(r.bossDescription);
+      if (r.bossSteps) setBossSteps(r.bossSteps);
       setMsg("AI 초안 생성됨 — 검토·수정 후 저장하세요.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "생성 실패");
@@ -107,6 +118,9 @@ export function SituationEditor({
         difficulty,
         expressions: exprs,
         questions,
+        sentenceItems: sentences,
+        bossDescription,
+        bossSteps,
       });
       setMsg("저장됨");
       router.refresh();
@@ -226,6 +240,39 @@ export function SituationEditor({
           </div>
         ))}
         <button type="button" className="btn secondary" onClick={() => setQuestions((qs) => [...qs, { promptZh: "", promptKo: "", modelAnswerZh: "", modelAnswerKo: "" }])}>+ 질문 추가</button>
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>문장 배열 문제 (Sentence Builder)</h3>
+        <p className="muted" style={{ fontSize: 12 }}>토큰(단어)은 공백 또는 &quot;/&quot;로 구분하세요. 학생은 셔플된 토큰을 순서대로 배열합니다.</p>
+        {sentences.map((s, i) => {
+          const up = (patch: Partial<SentenceRow>) => setSentences((xs) => xs.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
+          return (
+            <div className="card" key={i} style={{ background: "#fafafa" }}>
+              <div className="row">
+                <div className="field grow"><label>정답 문장</label><input value={s.targetZh} onChange={(e) => up({ targetZh: e.target.value })} placeholder="我是学生。" /></div>
+                <div className="field grow"><label>한국어 뜻</label><input value={s.targetKo} onChange={(e) => up({ targetKo: e.target.value })} placeholder="나는 학생이다." /></div>
+                <div className="field" style={{ width: 110 }}>
+                  <label>난이도</label>
+                  <select value={s.difficulty} onChange={(e) => up({ difficulty: e.target.value as Difficulty })}>
+                    <option value="easy">Easy</option><option value="normal">Normal</option><option value="hard">Hard</option>
+                  </select>
+                </div>
+              </div>
+              <div className="row" style={{ alignItems: "flex-end" }}>
+                <div className="field grow"><label>토큰(단어, 공백/&quot;/&quot; 구분)</label><input value={s.tokens} onChange={(e) => up({ tokens: e.target.value })} placeholder="我 / 是 / 学生" /></div>
+                <button type="button" className="btn secondary" onClick={() => setSentences((xs) => xs.filter((_, idx) => idx !== i))}>삭제</button>
+              </div>
+            </div>
+          );
+        })}
+        <button type="button" className="btn secondary" onClick={() => setSentences((xs) => [...xs, { targetZh: "", targetKo: "", tokens: "", difficulty }])}>+ 문장 추가</button>
+      </div>
+
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Boss Mission</h3>
+        <div className="field"><label>미션 설명</label><textarea rows={2} value={bossDescription} onChange={(e) => setBossDescription(e.target.value)} placeholder="중국 음식점에서 주문부터 계산까지 수행하기" /></div>
+        <div className="field"><label>미션 단계 (한 줄에 하나)</label><textarea rows={4} value={bossSteps} onChange={(e) => setBossSteps(e.target.value)} placeholder={"자리 안내 받기\n메뉴 주문하기\n추가 주문하기\n맛 표현하기\n계산하기"} /></div>
       </div>
 
       {error && <p className="error">{error}</p>}

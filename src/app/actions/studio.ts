@@ -134,6 +134,13 @@ export interface QuestionRow {
   modelAnswerZh: string;
   modelAnswerKo: string;
 }
+export interface SentenceRow {
+  id?: string;
+  targetZh: string;
+  targetKo: string;
+  tokens: string; // 공백 또는 "/"로 단어 구분
+  difficulty: Difficulty;
+}
 export interface SaveSituationInput {
   unitId: string;
   title: string;
@@ -143,6 +150,16 @@ export interface SaveSituationInput {
   difficulty: Difficulty;
   expressions: ExpressionRow[];
   questions: QuestionRow[];
+  sentenceItems: SentenceRow[];
+  bossDescription: string;
+  bossSteps: string; // 줄바꿈 구분
+}
+
+function parseTokens(s: string): string[] {
+  return s.split(/[\s/|]+/).map((t) => t.trim()).filter(Boolean);
+}
+function parseSteps(s: string): string[] {
+  return s.split(/\r?\n/).map((t) => t.trim()).filter(Boolean);
 }
 
 /** 상황 메타 + 표현 + 질문을 한 번에 저장(diff-upsert). RLS로 소유권 강제. */
@@ -200,6 +217,41 @@ export async function saveSituation(situationId: string, input: SaveSituationInp
       })),
   );
 
+  // 문장 배열 문제(diff-upsert)
+  await diffUpsert(
+    supabase,
+    "sentence_items",
+    "situation_id",
+    situationId,
+    input.sentenceItems
+      .filter((s) => s.targetZh.trim())
+      .map((s, i) => ({
+        id: s.id,
+        row: {
+          situation_id: situationId,
+          target_zh: s.targetZh.trim(),
+          target_ko: s.targetKo.trim() || null,
+          tokens: parseTokens(s.tokens),
+          difficulty: s.difficulty,
+          ord: i,
+        },
+      })),
+  );
+
+  // 보스 미션(상황당 1개 upsert, 비면 삭제)
+  const steps = parseSteps(input.bossSteps);
+  if (input.bossDescription.trim() || steps.length) {
+    const { error: bErr } = await supabase
+      .from("boss_missions")
+      .upsert(
+        { situation_id: situationId, description: input.bossDescription.trim() || null, steps },
+        { onConflict: "situation_id" },
+      );
+    if (bErr) throw new Error(bErr.message);
+  } else {
+    await supabase.from("boss_missions").delete().eq("situation_id", situationId);
+  }
+
   revalidatePath(`/teacher/studio/${input.unitId}`);
   revalidatePath(`/teacher/studio/${input.unitId}/${situationId}`);
 }
@@ -207,7 +259,7 @@ export async function saveSituation(situationId: string, input: SaveSituationInp
 /** 기존(id 보유)=update, 신규=insert, 빠진 것=delete. updateAssessment 패턴. */
 async function diffUpsert(
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
-  table: "expressions" | "questions",
+  table: "expressions" | "questions" | "sentence_items",
   parentCol: string,
   parentId: string,
   items: { id?: string; row: Record<string, unknown> }[],
@@ -251,6 +303,11 @@ const GeneratedSituationSchema = z.object({
       modelAnswerKo: z.string(),
     }),
   ),
+  sentenceItems: z.array(
+    z.object({ targetZh: z.string(), targetKo: z.string(), tokens: z.array(z.string()) }),
+  ),
+  bossDescription: z.string(),
+  bossSteps: z.array(z.string()),
 });
 
 const GEN_SYSTEM = [
@@ -262,6 +319,9 @@ const GEN_SYSTEM = [
   "- expressions: 핵심 표현·단어 6~10개. hanzi(간체), pinyin(성조 숫자/부호 무관, 최선), meaning(한국어).",
   "- questions: AI가 학생에게 던질 질문 10~15개. promptZh(중국어 질문), promptKo(한국어 번역),",
   "  modelAnswerZh(모범답안 중국어), modelAnswerKo(한국어 번역).",
+  "- sentenceItems: 단어 배열 연습 문장 5~8개. targetZh(정답 문장), targetKo(한국어 뜻),",
+  "  tokens(정답 문장을 의미 단위 '단어'로 분절한 배열, 순서대로). 한 글자씩이 아니라 단어 단위로 끊으세요.",
+  "- bossDescription: 단원 마무리 실전 미션 설명(한국어). bossSteps: 미션 수행 단계 4~6개(한국어).",
   "- 학생 수준과 난이도에 맞는 자연스럽고 교육적으로 적절한 내용으로.",
 ].join("\n");
 
@@ -278,6 +338,9 @@ export interface GeneratedSituation {
   roleAi: string;
   expressions: ExpressionRow[];
   questions: QuestionRow[];
+  sentenceItems: SentenceRow[];
+  bossDescription: string;
+  bossSteps: string;
 }
 
 export async function generateSituation(
@@ -347,5 +410,15 @@ export async function generateSituation(
       modelAnswerZh: (q.modelAnswerZh ?? "").trim(),
       modelAnswerKo: (q.modelAnswerKo ?? "").trim(),
     })),
+    sentenceItems: (out.sentenceItems ?? [])
+      .filter((s) => s.targetZh?.trim())
+      .map((s) => ({
+        targetZh: s.targetZh.trim(),
+        targetKo: (s.targetKo ?? "").trim(),
+        tokens: (s.tokens ?? []).filter(Boolean).join(" / "),
+        difficulty: input.difficulty,
+      })),
+    bossDescription: (out.bossDescription ?? "").trim(),
+    bossSteps: (out.bossSteps ?? []).filter(Boolean).join("\n"),
   };
 }

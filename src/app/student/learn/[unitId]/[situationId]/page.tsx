@@ -1,9 +1,18 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  createSupabaseServerClient,
+  createSupabaseAdminClient,
+} from "@/lib/supabase/server";
 import { Topbar } from "@/components/Topbar";
 import { SpeakButton } from "@/components/SpeakButton";
-import type { Expression, Profile, Situation, Unit } from "@/lib/database.types";
+import type {
+  Expression,
+  LevelProgress,
+  Profile,
+  Situation,
+  Unit,
+} from "@/lib/database.types";
 
 export default async function LearnSituationPage({
   params,
@@ -41,7 +50,31 @@ export default async function LearnSituationPage({
     .select("*")
     .eq("situation_id", situationId)
     .order("ord");
-  const list = (exprs ?? []) as Expression[];
+  const exprList = (exprs ?? []) as Expression[];
+
+  // 진척(본인) + 보스 미션 존재 여부(학생 read) + 문장 문제 수(admin)
+  const { data: progRows } = await supabase
+    .from("level_progress")
+    .select("activity, cleared")
+    .eq("student_id", user.id)
+    .eq("situation_id", situationId);
+  const cleared = new Set(
+    ((progRows ?? []) as Pick<LevelProgress, "activity" | "cleared">[])
+      .filter((p) => p.cleared)
+      .map((p) => p.activity),
+  );
+  const { data: boss } = await supabase
+    .from("boss_missions")
+    .select("id")
+    .eq("situation_id", situationId)
+    .maybeSingle<{ id: string }>();
+  const admin = createSupabaseAdminClient();
+  const { count: builderCount } = await admin
+    .from("sentence_items")
+    .select("id", { count: "exact", head: true })
+    .eq("situation_id", situationId);
+
+  const base = `/student/learn/${unitId}/${situationId}`;
 
   return (
     <>
@@ -59,8 +92,8 @@ export default async function LearnSituationPage({
         )}
 
         <h2>핵심 표현</h2>
-        {list.length === 0 && <div className="card muted">표현이 아직 없습니다.</div>}
-        {list.map((e) => (
+        {exprList.length === 0 && <div className="card muted">표현이 아직 없습니다.</div>}
+        {exprList.map((e) => (
           <div className="card" key={e.id}>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div>
@@ -73,20 +106,56 @@ export default async function LearnSituationPage({
           </div>
         ))}
 
-        <div className="card" style={{ background: "var(--primary-weak)" }}>
-          <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <b>AI 롤플레이 대화</b>
-              <p className="muted" style={{ fontSize: 13, margin: "4px 0 0" }}>
-                이 상황으로 AI와 직접 대화하며 1:1 코칭을 받아보세요.
-              </p>
-            </div>
-            <Link className="btn" href={`/student/learn/${unitId}/${situationId}/roleplay`}>
-              대화 시작 →
-            </Link>
-          </div>
-        </div>
+        <h2>학습 코스</h2>
+        {(builderCount ?? 0) > 0 && (
+          <ActivityCard
+            title="문장 배열 (Sentence Builder)"
+            desc="단어를 순서대로 배열해 문장을 완성"
+            href={`${base}/builder`}
+            done={cleared.has("builder")}
+          />
+        )}
+        <ActivityCard
+          title="롤플레이 대화"
+          desc="AI와 역할극 대화 + 1:1 코칭"
+          href={`${base}/roleplay`}
+          done={cleared.has("roleplay")}
+        />
+        {boss && (
+          <ActivityCard
+            title="Boss Mission"
+            desc="힌트 없이 실전 미션 수행 + 평가"
+            href={`${base}/boss`}
+            done={cleared.has("boss")}
+          />
+        )}
       </div>
     </>
+  );
+}
+
+function ActivityCard({
+  title,
+  desc,
+  href,
+  done,
+}: {
+  title: string;
+  desc: string;
+  href: string;
+  done: boolean;
+}) {
+  return (
+    <div className="card">
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>
+            {title} {done && <span className="ok" style={{ fontSize: 14 }}>✓ 완료</span>}
+          </div>
+          <div className="muted" style={{ fontSize: 13 }}>{desc}</div>
+        </div>
+        <Link className="btn" href={href}>{done ? "다시" : "시작"}</Link>
+      </div>
+    </div>
   );
 }
