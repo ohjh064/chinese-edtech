@@ -118,3 +118,50 @@ export interface Grade {
   finalized_at: string | null;
   updated_at: string;
 }
+
+// ───────── v2: 단원/상황/표현/질문 (AI 롤플레이 코치) ─────────
+export type Difficulty = "easy" | "normal" | "hard";
+
+export interface Unit {
+  id: string;
+  teacher_id: string;
+  class_id: string | null;
+  title: string;
+  subtitle: string | null;
+  theme: string | null;
+  culture_note: string | null;
+  ord: number;
+  published: boolean;
+  created_at: string;
+}
+
+export interface Situation {
+  id: string;
+  unit_id: string;
+  title: string;
+  description: string | null;
+  role_student: string | null;
+  role_ai: string | null;
+  difficulty: Difficulty;
+  ord: number;
+  created_at: string;
+}
+
+export interface Expression {
+  id: string;
+  situation_id: string;
+  hanzi: string;
+  pinyin: string | null;
+  meaning: string | null;
+  ord: number;
+}
+
+export interface Question {
+  id: string;
+  situation_id: string;
+  prompt_zh: string;
+  prompt_ko: string | null;
+  model_answer_zh: string | null;
+  model_answer_ko: string | null;
+  ord: number;
+}

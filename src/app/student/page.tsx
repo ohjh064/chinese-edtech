@@ -74,6 +74,11 @@ export default async function StudentDashboard() {
     <>
       <Topbar name={profile?.name || "학생"} role="student" home="/student" />
       <div className="container">
+        <div className="row" style={{ justifyContent: "flex-end" }}>
+          <Link className="btn" href="/student/learn">
+            회화 학습 →
+          </Link>
+        </div>
         {weak.length > 0 && (
           <div className="card" style={{ background: "var(--primary-weak)" }}>
             <b>복습 추천</b>

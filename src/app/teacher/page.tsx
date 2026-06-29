@@ -41,6 +41,9 @@ export default async function TeacherDashboard() {
             <Link className="btn secondary" href="/teacher/classes">
               반·학생 관리
             </Link>
+            <Link className="btn secondary" href="/teacher/studio">
+              Teacher Studio
+            </Link>
             <Link className="btn secondary" href="/teacher/settings">
               설정
             </Link>
