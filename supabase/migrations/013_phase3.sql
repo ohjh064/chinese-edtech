@@ -26,9 +26,11 @@ create table if not exists level_progress (
   activity text not null,                  -- 'builder' | 'roleplay' | 'boss'
   cleared boolean not null default false,
   score int not null default 0,
+  attempts int not null default 0,         -- boss 평가 누적 시도(비용 상한)
   updated_at timestamptz not null default now(),
   unique (student_id, situation_id, activity)
 );
+alter table level_progress add column if not exists attempts int not null default 0;
 
 create index if not exists idx_sentence_items_situation on sentence_items(situation_id, ord);
 create index if not exists idx_level_progress_student on level_progress(student_id, situation_id);

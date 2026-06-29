@@ -117,5 +117,8 @@ export async function sentenceHint(itemId: string, count: number): Promise<strin
     .single<{ situation_id: string; tokens: string[] }>();
   if (!item) throw new Error("문항을 찾을 수 없습니다");
   await assertViewable(supabase, item.situation_id);
-  return hintTokens(item.tokens, count);
+  // 정답 전체 순서가 새지 않도록 마지막 토큰은 절대 공개하지 않는다(앞부분 일부만).
+  const max = Math.max(1, item.tokens.length - 1);
+  const n = Math.min(Math.max(0, Math.floor(count)), max);
+  return hintTokens(item.tokens, n);
 }

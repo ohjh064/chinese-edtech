@@ -15,6 +15,7 @@ import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import * as z from "zod/v4";
 
 const MAX_TURNS = 30;
+const MAX_BOSS_EVALS = 8; // 보스 평가(유료) 대화당 누적 시도 상한
 const MODEL = "claude-sonnet-4-6";
 
 export interface TurnFeedback {
@@ -238,6 +239,9 @@ export async function sendTurn(
     .maybeSingle<{ id: string }>();
   if (!stillViewable) throw new Error("이 상황은 더 이상 이용할 수 없습니다");
 
+  // 보스 미션은 힌트/스캐폴딩 없음(§9) — 위조된 hintLevel 무시
+  if (conv.mode === "boss") hintLevel = undefined;
+
   const text = (studentText ?? "").trim();
   const isStudentTurn = text.length > 0 && (hintLevel === undefined || hintLevel === null);
 
@@ -460,20 +464,35 @@ export async function evaluateBoss(conversationId: string): Promise<BossEvaluati
     .maybeSingle<{ id: string }>();
   if (!stillViewable) throw new Error("이 상황은 더 이상 이용할 수 없습니다");
 
-  // 평가 연타로 인한 비용 방지: 이미 통과면 재호출 없이 반환, 직전 평가 20초 내면 차단
+  // 평가 비용 방지: 이미 통과면 재호출 없이 반환, 20초 간격 제한, 누적 시도 상한
   const { data: prog } = await supabase
     .from("level_progress")
-    .select("cleared, updated_at")
+    .select("cleared, attempts, updated_at")
     .eq("student_id", user.id)
     .eq("situation_id", conv.situation_id)
     .eq("activity", "boss")
-    .maybeSingle<{ cleared: boolean; updated_at: string }>();
+    .maybeSingle<{ cleared: boolean; attempts: number; updated_at: string }>();
   if (prog?.cleared) {
     return { passed: true, summary: "이미 미션을 통과했습니다.", steps: [] };
   }
   if (prog && Date.now() - new Date(prog.updated_at).getTime() < 20_000) {
     throw new Error("평가는 잠시 후 다시 시도하세요.");
   }
+  const attempts = prog?.attempts ?? 0;
+  if (attempts >= MAX_BOSS_EVALS) {
+    throw new Error(`평가 횟수(${MAX_BOSS_EVALS}회)를 초과했습니다. 교사에게 문의하세요.`);
+  }
+  // 유료 호출 전에 시도를 선기록 — 실패/연타/동시요청에서도 카운트되어 무한 재시도를 막는다.
+  await supabase.from("level_progress").upsert(
+    {
+      student_id: user.id,
+      situation_id: conv.situation_id,
+      activity: "boss",
+      attempts: attempts + 1,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "student_id,situation_id,activity" },
+  );
 
   const admin = createSupabaseAdminClient();
   const { data: situation } = await admin

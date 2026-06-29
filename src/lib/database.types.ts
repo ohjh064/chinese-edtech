@@ -212,5 +212,6 @@ export interface LevelProgress {
   activity: string;
   cleared: boolean;
   score: number;
+  attempts: number;
   updated_at: string;
 }
