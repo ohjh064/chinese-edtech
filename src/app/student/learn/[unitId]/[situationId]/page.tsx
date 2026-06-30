@@ -127,6 +127,12 @@ export default async function LearnSituationPage({
           href={`${base}/dual`}
           done={cleared.has("dual")}
         />
+        <ActivityCard
+          title="성조 발음 코칭"
+          desc="마이크로 성조 윤곽을 근사 분석(참고용)"
+          href={`${base}/tone`}
+          done={cleared.has("tone")}
+        />
         {boss && (
           <ActivityCard
             title="Boss Mission"
