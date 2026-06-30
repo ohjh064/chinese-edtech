@@ -121,6 +121,12 @@ export default async function LearnSituationPage({
           href={`${base}/roleplay`}
           done={cleared.has("roleplay")}
         />
+        <ActivityCard
+          title="AI 듀얼 롤플레이"
+          desc="AI가 두 역할을 시연 · 원하면 끼어들기"
+          href={`${base}/dual`}
+          done={cleared.has("dual")}
+        />
         {boss && (
           <ActivityCard
             title="Boss Mission"
