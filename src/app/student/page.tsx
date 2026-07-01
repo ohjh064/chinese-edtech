@@ -146,7 +146,10 @@ export default async function StudentDashboard() {
                 </div>
                 {isPractice ? (
                   <div className="row" style={{ gap: 8, alignItems: "center" }}>
-                    <Link className="btn" href={`/student/practice/${a.id}`}>
+                    <Link className="btn" href={`/student/study/${a.id}`}>
+                      단어장 학습
+                    </Link>
+                    <Link className="btn secondary" href={`/student/practice/${a.id}`}>
                       연습하기
                     </Link>
                     <Link className="btn secondary" href={`/student/quiz/${a.id}`}>

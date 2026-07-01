@@ -280,6 +280,14 @@ export function WordSetManager({
               </div>
             </div>
 
+            {selected.status !== "published" && selected.distCount > 0 && (
+              <div className="card" style={{ borderColor: "var(--warn, #dc2626)", background: "#fff5f5", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <b className="error">배부됨 · 아직 비공개</b>
+                <span className="muted" style={{ fontSize: 13 }}>공개해야 학생 화면에 나타납니다.</span>
+                <button className="btn" type="button" onClick={togglePublish} disabled={busy}>지금 공개하기</button>
+              </div>
+            )}
+
             <div className="row" style={{ gap: 8, margin: "8px 0" }}>
               <button className={`btn ${tab === "words" ? "" : "secondary"}`} type="button" onClick={() => setTab("words")}>단어 편집</button>
               <button className={`btn ${tab === "dist" ? "" : "secondary"}`} type="button" onClick={() => setTab("dist")}>배부 관리</button>
