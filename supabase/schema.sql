@@ -590,6 +590,44 @@ end; $$;
 revoke all on function sync_practice_mistakes(uuid, jsonb) from public;
 grant execute on function sync_practice_mistakes(uuid, jsonb) to authenticated;
 
+-- ──────────────── 단어 세트 배부(distribution) — 다중 반 + 개별 학생 ────────────────
+create table if not exists assessment_distributions (
+  id uuid primary key default gen_random_uuid(),
+  assessment_id uuid not null references assessments(id) on delete cascade,
+  class_id uuid references classes(id) on delete cascade,
+  student_id uuid references profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  check ((class_id is not null) <> (student_id is not null))
+);
+create unique index if not exists uniq_dist_class on assessment_distributions(assessment_id, class_id) where student_id is null;
+create unique index if not exists uniq_dist_student on assessment_distributions(assessment_id, student_id) where class_id is null;
+create index if not exists idx_dist_assessment on assessment_distributions(assessment_id);
+create index if not exists idx_dist_student on assessment_distributions(student_id);
+alter table assessment_distributions enable row level security;
+drop policy if exists dist_teacher_all on assessment_distributions;
+create policy dist_teacher_all on assessment_distributions for all
+  using (owns_assessment(assessment_id)) with check (owns_assessment(assessment_id));
+
+-- can_take_assessment 확장(가산): 레거시 class_id + 배부(반/학생). 뒤에서 재정의(create or replace).
+create or replace function can_take_assessment(a_id uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from assessments a
+    where a.id = a_id and a.status = 'published' and (
+      exists (select 1 from enrollments e where e.class_id = a.class_id and e.student_id = auth.uid())
+      or exists (
+        select 1 from assessment_distributions d
+        join enrollments e on e.class_id = d.class_id
+        where d.assessment_id = a.id and e.student_id = auth.uid()
+      )
+      or exists (
+        select 1 from assessment_distributions d
+        where d.assessment_id = a.id and d.student_id = auth.uid()
+      )
+    )
+  );
+$$;
+
 -- ──────────────── 교사 API 키(BYOK) — 암호화 저장 ────────────────
 -- 교사가 본인 Anthropic API 키를 입력하면, 그 교사/학생의 AI 채점 비용은
 -- 그 키(교사 계정)로 과금된다. 운영자 단일 키 부담 제거(무료 배포 목적).

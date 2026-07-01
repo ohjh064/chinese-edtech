@@ -49,6 +49,14 @@ export interface Assessment {
   created_at: string;
 }
 
+export interface AssessmentDistribution {
+  id: string;
+  assessment_id: string;
+  class_id: string | null;
+  student_id: string | null;
+  created_at: string;
+}
+
 export interface Word {
   id: string;
   assessment_id: string;
