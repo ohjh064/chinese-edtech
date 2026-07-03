@@ -104,7 +104,7 @@ export async function getQuizQuestions(
 
 export async function submitQuizScore(
   assessmentId: string,
-  mode: QuizMode,
+  mode: string, // 'pinyin'|'tone'|'meaning'|'sentence'|'match' (quiz_scores.mode=text)
   score: number,
   correct: number,
   total: number,
@@ -156,7 +156,7 @@ function maskName(name: string): string {
 
 export async function getQuizLeaderboard(
   assessmentId: string,
-  mode: QuizMode,
+  mode: string,
   scope: "best" | "today" = "best",
 ): Promise<Leaderboard> {
   const supabase = await createSupabaseServerClient();

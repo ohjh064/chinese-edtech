@@ -5,7 +5,8 @@ import {
   createSupabaseAdminClient,
 } from "@/lib/supabase/server";
 import { Topbar } from "@/components/Topbar";
-import { WordStudyStep1, type StudyCard } from "@/components/WordStudyStep1";
+import { StudySteps } from "@/components/StudySteps";
+import type { StudyCard } from "@/components/WordStudyStep1";
 import { toDisplayWord } from "@/grading/pinyin.js";
 import type { Assessment, Profile, Word, WordKey } from "@/lib/database.types";
 
@@ -82,11 +83,11 @@ export default async function StudyPage({
       <div className="container">
         <Link href="/student" className="muted">← 내 학습</Link>
         <h1>{assessment.title}</h1>
-        <p className="muted">단어를 들으며 뜻과 이미지를 익혀요. 발음이 2번 나온 뒤 자동으로 넘어갑니다.</p>
+        <p className="muted">1단계는 들으며 익히고, 2단계는 단어와 뜻을 짝지어 맞춰요.</p>
         {cards.length === 0 ? (
           <div className="card muted">아직 단어가 없습니다.</div>
         ) : (
-          <WordStudyStep1 cards={cards} />
+          <StudySteps assessmentId={assessmentId} title={assessment.title} cards={cards} />
         )}
       </div>
     </>
