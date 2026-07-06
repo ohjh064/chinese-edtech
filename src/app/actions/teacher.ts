@@ -8,7 +8,7 @@ import {
 } from "@/lib/supabase/server";
 import { gradeSubmissionById } from "@/lib/grading-bridge";
 import { mapErrorsToScore } from "@/grading/scale.js";
-import { encryptSecret, decryptSecret, lastFour } from "@/lib/crypto";
+import { requireAnthropicKey } from "@/lib/ai-key";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import * as z from "zod/v4";
@@ -542,43 +542,6 @@ export async function returnSubmission(submissionId: string, note: string) {
   revalidatePath(`/teacher/${sub.assessment_id}/monitor`);
 }
 
-// ───────────────────── 교사 API 키(BYOK) ─────────────────────
-
-/** 교사가 본인 Anthropic API 키 저장(암호화). 그 교사/학생 AI 채점에 사용·과금. */
-export async function setAnthropicKey(plainKey: string) {
-  const key = plainKey.trim();
-  if (!key.startsWith("sk-ant-")) {
-    throw new Error("올바른 Anthropic API 키 형식이 아닙니다(sk-ant-…).");
-  }
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("로그인이 필요합니다");
-
-  const { error } = await supabase.from("teacher_secrets").upsert(
-    {
-      teacher_id: user.id,
-      anthropic_key_encrypted: encryptSecret(key),
-      key_last4: lastFour(key),
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "teacher_id" },
-  );
-  if (error) throw new Error(error.message);
-  revalidatePath("/teacher/settings");
-}
-
-export async function removeAnthropicKey() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("로그인이 필요합니다");
-  await supabase.from("teacher_secrets").delete().eq("teacher_id", user.id);
-  revalidatePath("/teacher/settings");
-}
-
 // ───────────────────── AI 문항 자동 생성 (한국어 → 단어) ─────────────────────
 
 export interface GenerateWordsInput {
@@ -668,28 +631,7 @@ export async function generateWordsFromKorean(
   } = await supabase.auth.getUser();
   if (!user) throw new Error("로그인이 필요합니다");
 
-  // BYOK: 본인 암호화 키(RLS owner-only) → env fallback
-  let apiKey: string | undefined;
-  const { data: secret } = await supabase
-    .from("teacher_secrets")
-    .select("anthropic_key_encrypted")
-    .eq("teacher_id", user.id)
-    .maybeSingle<{ anthropic_key_encrypted: string }>();
-  if (secret?.anthropic_key_encrypted) {
-    try {
-      apiKey = decryptSecret(secret.anthropic_key_encrypted);
-    } catch {
-      // 복호화 실패(APP_SECRET_KEY 변경 등) → fallback
-    }
-  }
-  if (!apiKey && process.env.ANTHROPIC_API_KEY) {
-    apiKey = process.env.ANTHROPIC_API_KEY;
-  }
-  if (!apiKey) {
-    throw new Error(
-      "Anthropic API 키가 설정되지 않았습니다. 교사 설정에서 키를 입력하세요.",
-    );
-  }
+  const apiKey = requireAnthropicKey();
 
   const items =
     input.mode === "list"

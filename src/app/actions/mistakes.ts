@@ -9,7 +9,7 @@ import {
   createSupabaseServerClient,
   createSupabaseAdminClient,
 } from "@/lib/supabase/server";
-import { decryptSecret } from "@/lib/crypto";
+import { getAnthropicKey } from "@/lib/ai-key";
 import { toDisplayWord } from "@/grading/pinyin.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
@@ -31,24 +31,6 @@ async function requireStudent() {
   return { supabase, userId: user.id };
 }
 
-async function resolveTeacherKey(
-  admin: ReturnType<typeof createSupabaseAdminClient>,
-  teacherId: string,
-): Promise<string | undefined> {
-  const { data: secret } = await admin
-    .from("teacher_secrets")
-    .select("anthropic_key_encrypted")
-    .eq("teacher_id", teacherId)
-    .maybeSingle<{ anthropic_key_encrypted: string }>();
-  if (secret?.anthropic_key_encrypted) {
-    try {
-      return decryptSecret(secret.anthropic_key_encrypted);
-    } catch {
-      /* fallback */
-    }
-  }
-  return process.env.ANTHROPIC_API_KEY || undefined;
-}
 
 const KIND_KO: Record<MistakeKind, string> = {
   pinyin: "병음",
@@ -172,7 +154,7 @@ export async function generateMistakeDrill(): Promise<DrillItem[]> {
   const teacherId = [...teacherCount.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
   if (!teacherId) throw new Error("맞춤 출제를 위한 교사 정보가 없습니다.");
 
-  const apiKey = await resolveTeacherKey(admin, teacherId);
+  const apiKey = getAnthropicKey();
   if (!apiKey) throw new Error("교사 Anthropic API 키가 설정되지 않아 맞춤 출제를 할 수 없습니다.");
 
   // 유료 호출 직전 연타 방지: 학생당 최소 간격(캐시 미스 경로에만 적용). 호출 실패 시에도 카운트.

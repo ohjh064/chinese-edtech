@@ -39,9 +39,6 @@ export function TeacherTabs({ active }: { active: TeacherTab }) {
       <Link className="btn secondary" href="/teacher/classes" style={{ fontSize: 13, padding: "6px 12px" }}>
         반·학생 관리
       </Link>
-      <Link className="btn secondary" href="/teacher/settings" style={{ fontSize: 13, padding: "6px 12px" }}>
-        설정
-      </Link>
     </div>
   );
 }

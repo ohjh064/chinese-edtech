@@ -652,24 +652,9 @@ returns boolean language sql stable security definer set search_path = public as
   );
 $$;
 
--- ──────────────── 교사 API 키(BYOK) — 암호화 저장 ────────────────
--- 교사가 본인 Anthropic API 키를 입력하면, 그 교사/학생의 AI 채점 비용은
--- 그 키(교사 계정)로 과금된다. 운영자 단일 키 부담 제거(무료 배포 목적).
--- 값은 앱 서버에서 AES-256-GCM으로 암호화한 ciphertext만 저장. 평문 미저장.
-create table if not exists teacher_secrets (
-  teacher_id uuid primary key references profiles(id) on delete cascade,
-  anthropic_key_encrypted text not null,   -- base64(iv|tag|ciphertext)
-  key_last4 text,                          -- 표시용(평문 아님)
-  updated_at timestamptz not null default now()
-);
-
-alter table teacher_secrets enable row level security;
-
--- 본인 행만 접근(교사). 암호문은 APP_SECRET_KEY 없이는 복호화 불가하므로
--- 행 소유자에게 노출되어도 무방하며, 타인은 RLS로 차단됨.
-drop policy if exists teacher_secrets_owner_all on teacher_secrets;
-create policy teacher_secrets_owner_all on teacher_secrets for all
-  using (teacher_id = auth.uid()) with check (teacher_id = auth.uid());
+-- 교사 API 키(BYOK)는 폐지: Anthropic 키는 서버 환경변수 ANTHROPIC_API_KEY(.env.local)에서만 읽는다.
+-- 웹에서 키를 입력받아 저장하던 teacher_secrets 테이블은 제거(023_drop_teacher_secrets.sql).
+drop table if exists teacher_secrets cascade;
 
 -- ──────────────── AI 채점 결과 캐시 (PRD §11 비용 절감) ────────────────
 -- 동일 (한자, 학생답안, 허용정답/예문) 입력의 AI 판정을 재사용해 호출·비용을 줄인다.

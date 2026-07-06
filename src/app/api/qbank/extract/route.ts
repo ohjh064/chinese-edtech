@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { decryptSecret } from "@/lib/crypto";
+import { getAnthropicKey } from "@/lib/ai-key";
 import { extractExamplesFromBase64 } from "@/lib/qbank-extract";
 
 // 대용량 PDF/이미지는 서버 액션(React Flight) 인자 한도에 걸리므로 Route Handler로 처리한다.
@@ -20,24 +20,10 @@ export async function POST(request: Request): Promise<NextResponse> {
       return NextResponse.json({ error: "교사만 사용할 수 있습니다" }, { status: 403 });
     }
 
-    // BYOK 키 해석(교사 본인) → env fallback
-    let apiKey: string | undefined;
-    const { data: secret } = await supabase
-      .from("teacher_secrets")
-      .select("anthropic_key_encrypted")
-      .eq("teacher_id", user.id)
-      .maybeSingle<{ anthropic_key_encrypted: string }>();
-    if (secret?.anthropic_key_encrypted) {
-      try {
-        apiKey = decryptSecret(secret.anthropic_key_encrypted);
-      } catch {
-        /* fallback */
-      }
-    }
-    if (!apiKey && process.env.ANTHROPIC_API_KEY) apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = getAnthropicKey();
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Anthropic API 키가 설정되지 않았습니다. 교사 설정에서 키를 입력하세요." },
+        { error: "AI 기능이 비활성화되어 있습니다. 서버에 ANTHROPIC_API_KEY(.env.local)를 설정하세요." },
         { status: 400 },
       );
     }

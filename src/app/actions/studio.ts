@@ -7,7 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { decryptSecret } from "@/lib/crypto";
+import { requireAnthropicKey } from "@/lib/ai-key";
 import { UNIT_TEMPLATES } from "@/lib/unit-templates";
 import { toDisplayWord } from "@/grading/pinyin.js";
 import Anthropic from "@anthropic-ai/sdk";
@@ -348,25 +348,9 @@ export async function generateSituation(
 ): Promise<GeneratedSituation> {
   const desc = (input.description ?? "").trim();
   if (!desc) throw new Error("상황 설명을 입력하세요");
-  const { supabase, userId } = await requireTeacher();
+  await requireTeacher();
 
-  let apiKey: string | undefined;
-  const { data: secret } = await supabase
-    .from("teacher_secrets")
-    .select("anthropic_key_encrypted")
-    .eq("teacher_id", userId)
-    .maybeSingle<{ anthropic_key_encrypted: string }>();
-  if (secret?.anthropic_key_encrypted) {
-    try {
-      apiKey = decryptSecret(secret.anthropic_key_encrypted);
-    } catch {
-      /* fallback */
-    }
-  }
-  if (!apiKey && process.env.ANTHROPIC_API_KEY) apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error("Anthropic API 키가 설정되지 않았습니다. 교사 설정에서 키를 입력하세요.");
-  }
+  const apiKey = requireAnthropicKey();
 
   const userMsg = [
     input.unitTheme ? `단원 주제: ${input.unitTheme}` : "",

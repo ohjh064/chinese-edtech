@@ -486,7 +486,7 @@ function ExamplesTab({
           {hasKey ? (
             <input type="file" accept="application/pdf,image/*" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; if (f) void onFile(f); e.target.value = ""; }} />
           ) : (
-            <p className="error" style={{ fontSize: 13 }}>AI 추출에는 Anthropic API 키가 필요합니다. <a href="/teacher/settings">설정에서 키 입력</a></p>
+            <p className="error" style={{ fontSize: 13 }}>AI 추출이 비활성화되어 있습니다. 서버에 ANTHROPIC_API_KEY(.env.local)를 설정하세요.</p>
           )}
         </div>
       </div>
@@ -665,7 +665,7 @@ function GenerateTab({
       <div className="card">
         <b>새 시험 생성</b>
         {!hasKey ? (
-          <p className="error" style={{ margin: "8px 0 0" }}>AI 생성에는 Anthropic API 키가 필요합니다. <a href="/teacher/settings">설정에서 키 입력</a></p>
+          <p className="error" style={{ margin: "8px 0 0" }}>AI 생성이 비활성화되어 있습니다. 서버에 ANTHROPIC_API_KEY(.env.local)를 설정하세요.</p>
         ) : types.length === 0 ? (
           <p className="muted" style={{ margin: "8px 0 0" }}>먼저 “기출 예시 → 유형 관리”에서 유형을 등록하고, 유형별로 기출 예시를 넣어 주세요.</p>
         ) : (

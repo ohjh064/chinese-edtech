@@ -9,7 +9,7 @@ import {
   createSupabaseServerClient,
   createSupabaseAdminClient,
 } from "@/lib/supabase/server";
-import { decryptSecret } from "@/lib/crypto";
+import { getAnthropicKey } from "@/lib/ai-key";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import * as z from "zod/v4";
@@ -38,25 +38,6 @@ export interface DualTurnResult {
 }
 
 const LineSchema = z.object({ lineZh: z.string(), lineKo: z.string() });
-
-async function resolveTeacherKey(
-  admin: ReturnType<typeof createSupabaseAdminClient>,
-  teacherId: string,
-): Promise<string | undefined> {
-  const { data: secret } = await admin
-    .from("teacher_secrets")
-    .select("anthropic_key_encrypted")
-    .eq("teacher_id", teacherId)
-    .maybeSingle<{ anthropic_key_encrypted: string }>();
-  if (secret?.anthropic_key_encrypted) {
-    try {
-      return decryptSecret(secret.anthropic_key_encrypted);
-    } catch {
-      /* fallback */
-    }
-  }
-  return process.env.ANTHROPIC_API_KEY || undefined;
-}
 
 function roleToSpeaker(role: string): DualSpeaker {
   if (role === "ai") return "a";
@@ -184,7 +165,7 @@ async function loadDual(conversationId: string): Promise<{
     .eq("id", situation.unit_id)
     .single<{ teacher_id: string }>();
   if (!unit) throw new Error("단원을 찾을 수 없습니다");
-  const apiKey = await resolveTeacherKey(admin, unit.teacher_id);
+  const apiKey = getAnthropicKey();
   if (!apiKey) throw new Error("교사 Anthropic API 키가 설정되지 않아 대화를 진행할 수 없습니다.");
 
   const { data: exprs } = await admin

@@ -47,12 +47,7 @@ export default async function WordSetsPage() {
   }));
 
   const roster = await getTeacherRoster();
-
-  const { data: secret } = await supabase
-    .from("teacher_secrets")
-    .select("key_last4")
-    .eq("teacher_id", user.id)
-    .maybeSingle<{ key_last4: string | null }>();
+  const hasKey = !!process.env.ANTHROPIC_API_KEY;
 
   return (
     <>
@@ -61,7 +56,7 @@ export default async function WordSetsPage() {
         <TeacherTabs active="wordsets" />
         <h1>단어 세트 관리</h1>
         <p className="muted">단어 세트를 만들고 단어를 입력한 뒤, 반·학생에게 배부하면 학생이 학습할 수 있습니다.</p>
-        <WordSetManager initialSets={sets} roster={roster} hasKey={!!secret} />
+        <WordSetManager initialSets={sets} roster={roster} hasKey={hasKey} />
       </div>
     </>
   );

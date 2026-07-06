@@ -7,7 +7,7 @@
 - **채점 엔진** (PRD §5) — 외부 의존성 없는 TS 모듈, 41개 테스트 통과.
 - **AI 공급자** (PRD §9, §11) — Claude(Sonnet) 의미·문장 채점, 주입식.
 - **웹 앱** (Next.js + Supabase) — 인증, RLS 스키마, 교사 출제/검수, 학생 응시(§8 숫자 성조 입력), 자동채점, NEIS 엑셀 내보내기. `next build` 통과.
-- **BYOK(교사별 API 키)** — 교사가 본인 Anthropic 키를 입력하면 그 교사·학생의 AI 채점 비용이 **그 키로 청구**(무료 배포용). 키는 서버에서 AES-256-GCM 암호화 저장, 학생/타교사 비노출.
+- **AI 키(서버 환경변수 전용)** — Anthropic 키는 서버 `ANTHROPIC_API_KEY`(.env.local)에서만 읽는다. 웹 입력·DB 저장(BYOK)은 보안상 폐지. 키가 없으면 AI 기능만 비활성화된다.
 - **교사 검수 고도화** — 의미·문장 점수 인라인 수정 + 확정, **AI 재채점** 버튼, AI 지적 사항 표시.
 - **연습 모드 즉시 피드백** (PRD §6.1) — 무제한 연습, 제출 즉시 병음·성조 결정론 채점(AI 비용 0)으로 어느 음절의 성모/운모/성조가 틀렸는지 표시. 정답 공개는 교사 설정(`reveal_answers_in_practice`)을 따름. 점수표를 거치지 않아 확정 게이팅과 무관.
 - **반 관리 + 학생 계정 일괄 발급** (PRD §15-6) — 교사가 반 생성 → 명단(이름,번호[,이메일]) 붙여넣기로 학생 계정 일괄 생성(이메일 없으면 자동 생성 + 임시 비밀번호 1회 표시). 평가 출제 시 대상 반 지정 → 그 반 학생에게만 노출(RLS). 계정 생성은 service-role로 수행하되 교사 권한·반 소유를 먼저 검증.
@@ -20,11 +20,10 @@
 - **연습 약점 복습 추천** (PRD §6.1) — `practice_logs`를 집계해 자주 틀린 단어를 학생 대시보드 "복습 추천"으로 노출(연습 가능 평가면 바로 연습 링크). 집계는 [analytics.ts](src/lib/analytics.ts)(테스트 포함).
 - **배포 가이드** — [DEPLOY.md](DEPLOY.md): Supabase 스키마 적용 → 환경변수 → Vercel → 첫 교사 지정 → 스모크 테스트 → 보안 체크리스트.
 
-### BYOK 동작 (운영자 단일 키 부담 없음)
-1. 교사가 `/teacher/settings`에서 본인 Anthropic API 키 입력 → AES-256-GCM 암호화되어 `teacher_secrets`에 저장.
-2. 학생 제출/교사 재채점 시 [grading-bridge](src/lib/grading-bridge.ts)가 **그 평가 출제 교사의 키**를 복호화해 AI 호출 → 그 교사 계정에 과금.
-3. 우선순위: 교사 키 → (없으면) 운영자 공용 `ANTHROPIC_API_KEY`(선택) → 둘 다 없으면 의미·문장은 교사 검토로 위임. AI 호출 실패 시 결정론 채점만 수행(제출은 항상 성공).
-- 필요한 env: `APP_SECRET_KEY`(키 암호화용, 16자+ 고정), Supabase 키들. `.env.example` 참고.
+### AI 키 (서버 환경변수 전용)
+- Anthropic 키는 **서버 환경변수 `ANTHROPIC_API_KEY`(.env.local)에서만** 읽는다. 웹에서 키를 입력받아 저장하는 방식(BYOK)은 보안상 폐지했다.
+- 키가 있으면 [grading-bridge](src/lib/grading-bridge.ts)가 AI 채점·코칭에 사용하고, 없으면 의미·문장은 교사 검토로 위임(결정론 채점은 항상 수행 → 제출은 항상 성공).
+- 필요한 env: `ANTHROPIC_API_KEY`(AI 기능), Supabase 키들. `.env.example` 참고.
 
 ### 실행
 

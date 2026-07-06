@@ -1,7 +1,7 @@
 # 배포 가이드 — 핀마스터(PinMaster)
 
-무료 티어(Supabase Free + Vercel Hobby)로 배포하는 절차입니다. AI 채점 비용은
-**교사별 API 키(BYOK)**로 청구되므로 운영자가 부담하지 않습니다.
+무료 티어(Supabase Free + Vercel Hobby)로 배포하는 절차입니다. AI 키는 서버 환경변수
+**`ANTHROPIC_API_KEY`**(.env.local)에서만 읽으며, 없으면 AI 기능만 비활성화됩니다.
 
 ---
 
@@ -31,11 +31,9 @@
 | `NEXT_PUBLIC_SUPABASE_URL` | ✅ | Supabase Project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ | anon 키 |
 | `SUPABASE_SERVICE_ROLE_KEY` | ✅ | service_role 키(서버 전용 — 정답키 읽기·계정 생성·캐시) |
-| `APP_SECRET_KEY` | ✅ | 교사 API 키 암호화용. 16자 이상 랜덤. `openssl rand -base64 48` |
-| `ANTHROPIC_API_KEY` | ⛔ 선택 | 운영자 공용 키. **무료 배포 시 비워둠**(교사별 키로 과금). 비우면 교사 키 없을 때 의미·문장은 교사 검토로 위임 |
+| `ANTHROPIC_API_KEY` | 선택 | Anthropic Claude 키(서버 전용). AI 채점·문항 생성·회화에 사용. 비우면 AI 비활성화(의미·문장은 교사 검토) |
 
-> ⚠️ **`APP_SECRET_KEY`는 배포 후 절대 바꾸지 마세요.** 변경하면 기존에 저장된 교사 API
-> 키를 복호화할 수 없어 교사가 키를 다시 입력해야 합니다.
+> AI 키는 **서버 환경변수로만** 받는다(웹 입력 없음). 비워두면 AI 기능이 꺼지고 나머지는 정상 동작한다.
 
 ---
 
@@ -67,7 +65,7 @@
 
 ## 5. 운영 흐름 점검(스모크 테스트)
 
-1. 교사: `/teacher/settings`에서 **Anthropic API 키 등록**(없으면 의미·문장은 수동 검토).
+1. 운영자: 서버 환경변수 **`ANTHROPIC_API_KEY`**(.env.local) 설정(없으면 의미·문장은 교사 수동 검토).
 2. 교사: `/teacher/classes`에서 **반 생성 → 학생 일괄 발급**(임시 비번 배부).
 3. 교사: **새 평가 출제**(한자 입력 → 병음·성조 자동추천) → 대상 반 지정 → **공개**.
 4. 학생: 발급 계정으로 로그인 → **첫 로그인 시 비밀번호 강제 변경**.
@@ -87,7 +85,6 @@
 
 ## 7. 보안 체크리스트
 
-- [ ] `SUPABASE_SERVICE_ROLE_KEY`, `APP_SECRET_KEY`는 서버 환경변수로만(클라이언트 노출 금지).
-- [ ] RLS가 켜져 있는지 확인(스키마에 포함). 정답키(`word_keys`)·점수(`grades`)·교사 키(`teacher_secrets`)·AI 캐시(`ai_cache`)는 학생 비노출.
-- [ ] `APP_SECRET_KEY` 고정(미변경).
-- [ ] 교사 키는 AES-256-GCM 암호화 저장 — 평문 미저장 확인.
+- [ ] `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`는 서버 환경변수로만(클라이언트 노출 금지).
+- [ ] RLS가 켜져 있는지 확인(스키마에 포함). 정답키(`word_keys`)·점수(`grades`)·AI 캐시(`ai_cache`)는 학생 비노출.
+- [ ] Anthropic 키는 웹 입력을 받지 않고 서버 환경변수에서만 읽힘(코드상 BYOK 폐지).

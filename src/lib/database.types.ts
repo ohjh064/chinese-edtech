@@ -103,13 +103,6 @@ export interface Answer {
   updated_at: string;
 }
 
-export interface TeacherSecret {
-  teacher_id: string;
-  anthropic_key_encrypted: string;
-  key_last4: string | null;
-  updated_at: string;
-}
-
 export interface Grade {
   submission_id: string;
   pinyin_score: number;

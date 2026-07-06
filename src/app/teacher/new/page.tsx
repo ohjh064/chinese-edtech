@@ -25,12 +25,7 @@ export default async function NewAssessmentPage() {
     .eq("teacher_id", user.id)
     .order("created_at", { ascending: false });
 
-  const { data: secret } = await supabase
-    .from("teacher_secrets")
-    .select("teacher_id")
-    .eq("teacher_id", user.id)
-    .maybeSingle();
-  const hasKey = !!secret || !!process.env.ANTHROPIC_API_KEY;
+  const hasKey = !!process.env.ANTHROPIC_API_KEY;
 
   return (
     <>

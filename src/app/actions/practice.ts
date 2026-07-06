@@ -162,8 +162,8 @@ export async function gradePracticeAttempt(
     };
   });
 
-  // 세트 작성 교사의 키로 의미·문장 AI 코칭(없으면 결정론만). 실패 시 AI 없이 재채점.
-  const ai = await resolveAiProviderForTeacher(assessment.teacher_id);
+  // 서버 키로 의미·문장 AI 코칭(없으면 결정론만). 실패 시 AI 없이 재채점.
+  const ai = await resolveAiProviderForTeacher();
   let result: FinalScore;
   let aiUsed = !!ai;
   try {

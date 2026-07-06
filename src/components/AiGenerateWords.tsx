@@ -79,8 +79,7 @@ export function AiGenerateWords({
 
       {!hasKey ? (
         <p className="error" style={{ margin: "8px 0 0" }}>
-          AI 생성에는 Anthropic API 키가 필요합니다.{" "}
-          <a href="/teacher/settings">설정에서 키 입력</a>
+          AI 생성이 비활성화되어 있습니다. 서버에 ANTHROPIC_API_KEY(.env.local)를 설정하세요.
         </p>
       ) : (
         <>

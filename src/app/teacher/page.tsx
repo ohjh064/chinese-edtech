@@ -25,12 +25,7 @@ export default async function TeacherDashboard() {
     .eq("teacher_id", user.id)
     .order("created_at", { ascending: false });
 
-  const { data: secret } = await supabase
-    .from("teacher_secrets")
-    .select("key_last4")
-    .eq("teacher_id", user.id)
-    .maybeSingle<{ key_last4: string | null }>();
-  const hasKey = !!secret;
+  const hasKey = !!process.env.ANTHROPIC_API_KEY;
   const exams = ((assessments as Assessment[] | null) ?? []).filter((a) => a.mode === "exam");
 
   return (
@@ -47,14 +42,11 @@ export default async function TeacherDashboard() {
 
         {!hasKey && (
           <div className="card" style={{ borderColor: "var(--primary)" }}>
-            <b>AI 채점 키 미설정</b>
-            <p className="muted" style={{ fontSize: 13, margin: "4px 0 8px" }}>
-              의미·문장 자동채점에는 본인 Anthropic API 키가 필요합니다. 키가 없으면 해당
-              영역은 교사 직접 검토로 넘어갑니다. (본인/학생 AI 비용은 이 키로 청구)
+            <b>AI 기능 비활성화</b>
+            <p className="muted" style={{ fontSize: 13, margin: "4px 0 0" }}>
+              AI 자동채점·문항 생성은 서버 환경변수 <code>ANTHROPIC_API_KEY</code>(.env.local)가 설정되어야 사용할 수 있어요.
+              키가 없으면 의미·문장 채점은 교사 직접 검토로 넘어갑니다.
             </p>
-            <Link className="btn" href="/teacher/settings">
-              API 키 설정하기
-            </Link>
           </div>
         )}
 

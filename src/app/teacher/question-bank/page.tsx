@@ -15,13 +15,12 @@ export default async function QuestionBankPage() {
   const { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).single<Profile>();
   if (profile?.role !== "teacher") redirect("/student");
 
-  const [{ data: types }, { data: examples }, { data: settings }, { data: sets }, { data: secret }] =
+  const [{ data: types }, { data: examples }, { data: settings }, { data: sets }] =
     await Promise.all([
       supabase.from("qbank_types").select("*").eq("teacher_id", user.id).order("ord"),
       supabase.from("qbank_examples").select("*").eq("teacher_id", user.id).order("created_at"),
       supabase.from("qbank_settings").select("guidelines").eq("teacher_id", user.id).maybeSingle<{ guidelines: string | null }>(),
       supabase.from("qbank_sets").select("*").eq("teacher_id", user.id).order("created_at", { ascending: false }),
-      supabase.from("teacher_secrets").select("key_last4").eq("teacher_id", user.id).maybeSingle<{ key_last4: string | null }>(),
     ]);
 
   // 세트별 문항 수
@@ -36,7 +35,7 @@ export default async function QuestionBankPage() {
   }
   const setsWithCount = setList.map((s) => ({ ...s, itemCount: counts.get(s.id) ?? 0 }));
 
-  const hasKey = !!secret || !!process.env.ANTHROPIC_API_KEY;
+  const hasKey = !!process.env.ANTHROPIC_API_KEY;
   const roster = await getTeacherRoster();
 
   return (

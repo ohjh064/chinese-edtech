@@ -2,11 +2,11 @@
 
 /**
  * 문제 은행 — 기출 예시(스타일 학습) 등록 + AI 문항 생성 + 보관함.
- * 정답·해설이 담긴 문항은 교사 소유(RLS). AI는 교사 BYOK 키로 호출(구조화 출력).
+ * 정답·해설이 담긴 문항은 교사 소유(RLS). AI는 서버 환경변수 키로 호출(구조화 출력).
  */
 import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient, createSupabaseAdminClient } from "@/lib/supabase/server";
-import { decryptSecret } from "@/lib/crypto";
+import { requireAnthropicKey } from "@/lib/ai-key";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import * as z from "zod/v4";
@@ -30,28 +30,6 @@ async function requireTeacher() {
   return { supabase, userId: user.id };
 }
 
-/** 교사 BYOK 키(암호화) → 평문. 없으면 env fallback, 그래도 없으면 throw. */
-async function getTeacherKey(
-  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
-  userId: string,
-): Promise<string> {
-  const { data: secret } = await supabase
-    .from("teacher_secrets")
-    .select("anthropic_key_encrypted")
-    .eq("teacher_id", userId)
-    .maybeSingle<{ anthropic_key_encrypted: string }>();
-  let apiKey: string | undefined;
-  if (secret?.anthropic_key_encrypted) {
-    try {
-      apiKey = decryptSecret(secret.anthropic_key_encrypted);
-    } catch {
-      /* fallback */
-    }
-  }
-  if (!apiKey && process.env.ANTHROPIC_API_KEY) apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("Anthropic API 키가 설정되지 않았습니다. 교사 설정에서 키를 입력하세요.");
-  return apiKey;
-}
 
 // ───────────────────── 유형(qbank_types) ─────────────────────
 
@@ -293,7 +271,7 @@ export async function generateExamBySpecs(input: {
   difficulty: string;
 }): Promise<GeneratedItem[]> {
   const { supabase, userId } = await requireTeacher();
-  const apiKey = await getTeacherKey(supabase, userId);
+  const apiKey = requireAnthropicKey();
   const passage = (input.passage ?? "").trim();
 
   const specs = input.specs
@@ -347,7 +325,7 @@ export async function refineExamItem(input: {
   difficulty: string;
 }): Promise<GeneratedItem> {
   const { supabase, userId } = await requireTeacher();
-  const apiKey = await getTeacherKey(supabase, userId);
+  const apiKey = requireAnthropicKey();
   const instruction = input.instruction.trim();
   if (!instruction) throw new Error("수정 요청을 입력하세요.");
 
@@ -462,7 +440,7 @@ export async function classifyExamItems(
   const types = (typeRows ?? []) as { id: string; name: string }[];
   if (!types.length) return items.map(() => null);
   const idByName = new Map(types.map((t) => [t.name.trim(), t.id]));
-  const apiKey = await getTeacherKey(supabase, userId);
+  const apiKey = requireAnthropicKey();
   const client = new Anthropic({ apiKey });
 
   const payload = items.map((it, i) => ({ index: i, passage: it.passage, stem: it.stem, choices: it.choices, explanation: it.explanation }));

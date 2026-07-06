@@ -6,7 +6,7 @@
  */
 import "server-only";
 import { createSupabaseAdminClient } from "@/lib/supabase/server";
-import { decryptSecret } from "@/lib/crypto";
+import { getAnthropicKey } from "@/lib/ai-key";
 import { createCachingProvider } from "@/lib/ai-cache";
 import { createClaudeProvider } from "@/grading/ai/claudeProvider.js";
 import type { AiGradingProvider } from "@/grading/index.js";
@@ -26,43 +26,20 @@ import type {
 } from "@/lib/database.types";
 
 /**
- * 채점에 쓸 AI 공급자 결정 (BYOK).
- * 우선순위: 해당 평가 출제 교사의 키 → (없으면) 운영자 공용 키 → (없으면) AI 미사용.
- * 이렇게 해서 그 교사/학생의 AI 비용이 교사 본인 키로 과금된다.
+ * 채점에 쓸 AI 공급자 결정. 키는 서버 환경변수(ANTHROPIC_API_KEY)에서만 읽는다.
+ * 키가 없으면 AI 미사용(의미·문장은 교사 검토로 위임). 응답은 캐싱 래핑된다.
  */
 async function resolveAiProvider(
   admin: ReturnType<typeof createSupabaseAdminClient>,
-  teacherId: string,
 ): Promise<AiGradingProvider | undefined> {
-  const { data: secret } = await admin
-    .from("teacher_secrets")
-    .select("anthropic_key_encrypted")
-    .eq("teacher_id", teacherId)
-    .maybeSingle<{ anthropic_key_encrypted: string }>();
-
-  if (secret?.anthropic_key_encrypted) {
-    try {
-      const apiKey = decryptSecret(secret.anthropic_key_encrypted);
-      return createCachingProvider(createClaudeProvider({ apiKey }), admin);
-    } catch {
-      // 복호화 실패(APP_SECRET_KEY 변경 등) → 아래 fallback
-    }
-  }
-  if (process.env.ANTHROPIC_API_KEY) {
-    return createCachingProvider(createClaudeProvider(), admin);
-  }
-  return undefined;
+  if (!getAnthropicKey()) return undefined;
+  return createCachingProvider(createClaudeProvider(), admin);
 }
 
-/**
- * 학생 컨텍스트(연습 등)에서 세트 작성 교사의 AI 공급자(BYOK)를 해석한다.
- * 정답키/키는 학생이 못 읽으므로 admin(service role)으로 해석하며, 캐싱 래핑된다.
- */
-export async function resolveAiProviderForTeacher(
-  teacherId: string,
-): Promise<AiGradingProvider | undefined> {
+/** 학생 컨텍스트(연습 등)에서 AI 공급자를 해석한다(캐싱 래핑). */
+export async function resolveAiProviderForTeacher(): Promise<AiGradingProvider | undefined> {
   const admin = createSupabaseAdminClient();
-  return resolveAiProvider(admin, teacherId);
+  return resolveAiProvider(admin);
 }
 
 export function toGradingConfig(a: Assessment): GradingConfigInput {
@@ -142,7 +119,7 @@ export async function gradeSubmissionById(submissionId: string): Promise<void> {
 
   // 출제 교사의 키로 AI 채점(비용도 그 교사 계정). 키 없으면 의미·문장은
   // 교사 검토(needsReview)로 위임된다. AI 호출 실패는 채점 자체를 막지 않음.
-  const ai = await resolveAiProvider(admin, assessment.teacher_id);
+  const ai = await resolveAiProvider(admin);
 
   let result;
   try {
