@@ -6,6 +6,7 @@ import {
 } from "@/lib/supabase/server";
 import { Topbar } from "@/components/Topbar";
 import { SpeakButton } from "@/components/SpeakButton";
+import { AddToWordbookButton } from "@/components/AddToWordbookButton";
 import type {
   Expression,
   LevelProgress,
@@ -101,7 +102,19 @@ export default async function LearnSituationPage({
                 {e.pinyin && <span className="pill-preview muted" style={{ marginLeft: 10 }}>{e.pinyin}</span>}
                 {e.meaning && <div className="muted" style={{ fontSize: 14 }}>{e.meaning}</div>}
               </div>
-              <SpeakButton hanzi={e.hanzi} />
+              <div className="row" style={{ gap: 6, alignItems: "center" }}>
+                <SpeakButton hanzi={e.hanzi} />
+                <AddToWordbookButton
+                  item={{
+                    kind: "expression",
+                    hanzi: e.hanzi,
+                    pinyin: e.pinyin,
+                    meaning: e.meaning,
+                    situationId: e.situation_id,
+                    source: "expression",
+                  }}
+                />
+              </div>
             </div>
           </div>
         ))}

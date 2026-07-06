@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { SpeakButton } from "@/components/SpeakButton";
+import { AddToWordbookButton } from "@/components/AddToWordbookButton";
 
 export interface Flashcard {
   wordId: string;
@@ -20,7 +21,7 @@ function shuffled<T>(arr: T[]): T[] {
   return a;
 }
 
-export function Flashcards({ cards }: { cards: Flashcard[] }) {
+export function Flashcards({ cards, allowSave = false }: { cards: Flashcard[]; allowSave?: boolean }) {
   const [deck, setDeck] = useState<Flashcard[]>(cards);
   const [pos, setPos] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -111,6 +112,20 @@ export function Flashcards({ cards }: { cards: Flashcard[] }) {
           {pos + 1} / {deck.length} · 아는 단어 {known.size}
         </span>
         <div className="row" style={{ gap: 6 }}>
+          {allowSave && (
+            <AddToWordbookButton
+              key={cur.wordId}
+              item={{
+                kind: "word",
+                hanzi: cur.hanzi,
+                pinyin: cur.pinyin,
+                meaning: cur.meanings.join(", "),
+                example: cur.exampleSentence,
+                wordId: cur.wordId,
+                source: "flashcard",
+              }}
+            />
+          )}
           <button type="button" className="btn secondary" style={{ padding: "4px 10px", fontSize: 13 }} onClick={() => setFrontIsHanzi((v) => !v)}>
             {frontIsHanzi ? "한자 먼저" : "뜻 먼저"}
           </button>

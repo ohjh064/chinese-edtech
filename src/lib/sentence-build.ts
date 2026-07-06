@@ -29,6 +29,33 @@ export function shuffleTokens(tokens: string[], seed = 1): string[] {
   return a;
 }
 
+/** 문장 끝 부호(마침표/물음표/느낌표 등). 마지막 토큰이 이걸로 끝나면 '마지막 단어'를 노출한다. */
+const ENDING_PUNCT = /[。．.！!？?…]+$/u;
+
+/**
+ * 토큰 배열에서 문장 끝 부호를 분리한다.
+ * - 마지막 토큰에 부호가 붙어 있으면(예: "水。") 부호만 떼어 `ending`으로, 토큰은 core에 남긴다("水").
+ * - 부호만으로 된 토큰(예: 별도 "。")은 통째로 ending으로 옮긴다.
+ * 끝 부호가 배열 타일에 섞이면 순서 힌트가 새므로, 표시·채점 모두 core만 쓰고 ending은 문장 끝에 고정한다.
+ */
+export function splitTrailingPunct(tokens: string[]): { core: string[]; ending: string } {
+  const core = tokens.slice();
+  let ending = "";
+  while (core.length) {
+    const last = core[core.length - 1]!;
+    const m = last.match(ENDING_PUNCT);
+    if (!m) break;
+    ending = m[0] + ending;
+    const stripped = last.slice(0, last.length - m[0].length);
+    if (stripped) {
+      core[core.length - 1] = stripped;
+      break; // 텍스트 + 부호 토큰 → 부호만 떼고 종료
+    }
+    core.pop(); // 순수 부호 토큰 → 제거 후 계속(부호 토큰이 연속일 수 있음)
+  }
+  return { core, ending };
+}
+
 /** 배열 결과가 정답 문장과 같은지(연결 문자열 일치 — 동치 배열도 인정). */
 export function checkSentence(submitted: string[], target: string[]): boolean {
   return submitted.join("") === target.join("");

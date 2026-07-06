@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Topbar } from "@/components/Topbar";
+import { TeacherTabs } from "@/components/TeacherTabs";
 import type { Assessment, Profile } from "@/lib/database.types";
 
 export default async function TeacherDashboard() {
@@ -30,30 +31,18 @@ export default async function TeacherDashboard() {
     .eq("teacher_id", user.id)
     .maybeSingle<{ key_last4: string | null }>();
   const hasKey = !!secret;
+  const exams = ((assessments as Assessment[] | null) ?? []).filter((a) => a.mode === "exam");
 
   return (
     <>
       <Topbar name={profile.name || "교사"} role="teacher" home="/teacher" />
       <div className="container">
+        <TeacherTabs active="assessments" />
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <h1>평가 관리</h1>
-          <div className="row">
-            <Link className="btn secondary" href="/teacher/classes">
-              반·학생 관리
-            </Link>
-            <Link className="btn secondary" href="/teacher/wordsets">
-              단어 세트
-            </Link>
-            <Link className="btn secondary" href="/teacher/studio">
-              Teacher Studio
-            </Link>
-            <Link className="btn secondary" href="/teacher/settings">
-              설정
-            </Link>
-            <Link className="btn" href="/teacher/new">
-              + 새 평가 출제
-            </Link>
-          </div>
+          <h1 style={{ margin: 0 }}>평가 관리</h1>
+          <Link className="btn" href="/teacher/new">
+            + 새 평가 출제
+          </Link>
         </div>
 
         {!hasKey && (
@@ -69,11 +58,11 @@ export default async function TeacherDashboard() {
           </div>
         )}
 
-        {(!assessments || assessments.length === 0) && (
+        {exams.length === 0 && (
           <div className="card muted">아직 출제한 평가가 없습니다.</div>
         )}
 
-        {(assessments as Assessment[] | null)?.map((a) => (
+        {exams.map((a) => (
           <div className="card" key={a.id}>
             <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
               <div>

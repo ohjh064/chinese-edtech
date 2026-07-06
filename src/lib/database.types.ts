@@ -64,6 +64,7 @@ export interface Word {
   hanzi: string;
   syllable_count: number | null;
   error_prompt: string | null;
+  image_url: string | null;
   created_at: string;
 }
 
@@ -224,6 +225,22 @@ export interface LevelProgress {
   updated_at: string;
 }
 
+export type WordbookKind = "word" | "expression";
+
+export interface WordbookItem {
+  id: string;
+  student_id: string;
+  kind: WordbookKind;
+  hanzi: string;
+  pinyin: string | null;
+  meaning: string | null;
+  example: string | null;
+  word_id: string | null;
+  situation_id: string | null;
+  source: string | null;
+  created_at: string;
+}
+
 export type MistakeKind = "pinyin" | "tone" | "meaning" | "grammar" | "expression";
 
 export interface Mistake {
@@ -238,4 +255,89 @@ export interface Mistake {
   resolved: boolean;
   created_at: string;
   last_at: string;
+}
+
+// ───────── 단어장 학습 추적(교사용) + 교사↔학생 메시지 ─────────
+export interface StudyLog {
+  id: string;
+  student_id: string;
+  assessment_id: string;
+  word_id: string;
+  step: number; // 1..5
+  correct: boolean | null; // null = 1단계(듣기)
+  attempt_at: string;
+}
+
+export type MessageSenderRole = "teacher" | "student";
+
+export interface StudentMessage {
+  id: string;
+  teacher_id: string;
+  student_id: string;
+  assessment_id: string | null;
+  sender_role: MessageSenderRole;
+  body: string;
+  read_at: string | null;
+  created_at: string;
+}
+
+// ───────── 문제 은행(기출 스타일 학습 + AI 문항 생성 + 보관함) ─────────
+export interface QbankType {
+  id: string;
+  teacher_id: string;
+  name: string;
+  ord: number;
+  created_at: string;
+}
+
+export interface QbankExample {
+  id: string;
+  teacher_id: string;
+  type_id: string | null;
+  qnum: string | null;
+  passage: string | null;
+  stem: string;
+  choices: string[];
+  answer_index: number | null;
+  explanation: string | null;
+  source: string | null;
+  created_at: string;
+}
+
+export interface QbankSettings {
+  teacher_id: string;
+  guidelines: string | null;
+  updated_at: string;
+}
+
+export interface QbankSet {
+  id: string;
+  teacher_id: string;
+  title: string;
+  passage: string | null;
+  spec: unknown;
+  shared: boolean;
+  class_id: string | null;
+  created_at: string;
+}
+
+export interface QbankItem {
+  id: string;
+  set_id: string;
+  ord: number;
+  passage: string | null;
+  stem: string;
+  choices: string[];
+  answer_index: number;
+  explanation: string | null;
+  type_id: string | null;
+  created_at: string;
+}
+
+export interface QbankDistribution {
+  id: string;
+  set_id: string;
+  class_id: string | null;
+  student_id: string | null;
+  created_at: string;
 }

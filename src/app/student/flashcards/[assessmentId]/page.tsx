@@ -86,7 +86,7 @@ export default async function FlashcardsPage({
         </Link>
         <h1>플래시카드 · {assessment.title}</h1>
         <p className="muted">{assessment.unit} · 카드를 탭해 뒤집고, 발음도 들어보세요.</p>
-        <Flashcards cards={cards} />
+        <Flashcards cards={cards} allowSave />
       </div>
     </>
   );

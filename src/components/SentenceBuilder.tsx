@@ -116,6 +116,14 @@ export function SentenceBuilder({ items }: { items: BuilderItem[] }) {
           {arranged.map((tok) => (
             <button key={tok.k} type="button" className="btn" style={chip} onClick={() => remove(tok)}>{tok.t}</button>
           ))}
+          {item.ending && (
+            <span
+              style={{ marginLeft: "auto", fontSize: 18, fontWeight: 700 }}
+              title="문장 끝 부호(고정)"
+            >
+              {item.ending}
+            </span>
+          )}
         </div>
 
         <div className="row" style={{ gap: 6 }}>

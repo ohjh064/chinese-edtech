@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { splitSyllables, normalizeSyllable, toDisplayWord } from "@/grading/pinyin.js";
+import { splitSyllables, toDisplayWord } from "@/grading/pinyin.js";
+import { convertPinyin } from "@/lib/pinyin-input";
 import {
   startSubmission,
   submitAnswers,
@@ -21,19 +22,6 @@ interface RawAnswer {
   pinyin: string; // "ni3 hao3" 형식 입력
   meaning: string;
   sentence: string;
-}
-
-/** "ni3 hao3" → { pinyin: "ni hao"(성조제외), tones: [3,3] } — PRD §8 분리 저장 */
-function convertPinyin(raw: string): { pinyin: string; tones: number[] } {
-  const tokens = splitSyllables(raw);
-  const plains: string[] = [];
-  const tones: number[] = [];
-  for (const tok of tokens) {
-    const { plain, tone } = normalizeSyllable(tok);
-    plains.push(plain);
-    tones.push(tone ?? 0);
-  }
-  return { pinyin: plains.join(" "), tones };
 }
 
 /** 저장된 plain 병음 + 성조배열 → 입력 표시용 "ni3 hao3" (경성은 숫자 생략) */

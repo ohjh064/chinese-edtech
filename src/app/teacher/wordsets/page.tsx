@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Topbar } from "@/components/Topbar";
 import { WordSetManager, type SetSummary } from "@/components/wordsets/WordSetManager";
+import { TeacherTabs } from "@/components/TeacherTabs";
 import { getTeacherRoster } from "@/app/actions/wordsets";
 import type { Assessment, Profile } from "@/lib/database.types";
 
@@ -24,7 +24,8 @@ export default async function WordSetsPage() {
     .select("*")
     .eq("teacher_id", user.id)
     .order("created_at", { ascending: false });
-  const list = (assessments ?? []) as Assessment[];
+  // 단어 세트 = 연습 모드 assessment만(시험은 평가 관리 탭에서)
+  const list = ((assessments ?? []) as Assessment[]).filter((a) => a.mode === "practice");
   const ids = list.map((a) => a.id);
 
   const wordCount = new Map<string, number>();
@@ -57,7 +58,7 @@ export default async function WordSetsPage() {
     <>
       <Topbar name={profile.name || "교사"} role="teacher" home="/teacher" />
       <div className="container" style={{ maxWidth: 1100 }}>
-        <Link href="/teacher" className="muted">← 평가 관리</Link>
+        <TeacherTabs active="wordsets" />
         <h1>단어 세트 관리</h1>
         <p className="muted">단어 세트를 만들고 단어를 입력한 뒤, 반·학생에게 배부하면 학생이 학습할 수 있습니다.</p>
         <WordSetManager initialSets={sets} roster={roster} hasKey={!!secret} />

@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getQuizQuestions,
+  getSpeedQuizQuestions,
   submitQuizScore,
   getQuizLeaderboard,
   type Leaderboard,
 } from "@/app/actions/quiz";
+import { logStudyAttempts } from "@/app/actions/study";
 import type { QuizMode, QuizDirection, QuizQuestion } from "@/lib/quiz-gen";
 import { SpeakButton } from "@/components/SpeakButton";
+import { speakOnce, cancelSpeech } from "@/lib/tts";
 
 const MODES: { key: QuizMode; label: string }[] = [
   { key: "meaning", label: "의미" },
@@ -30,7 +33,19 @@ function shuffleIdx(n: number): number[] {
 
 type Phase = "setup" | "playing" | "done";
 
-export function QuizGame({ assessmentId, title }: { assessmentId: string; title: string }) {
+export function QuizGame({
+  assessmentId,
+  title,
+  autoSpeak = false,
+  speed = false,
+}: {
+  assessmentId: string;
+  title: string;
+  /** 새 문제가 뜰 때 한자 발음 자동 재생(한자가 문제일 때만). */
+  autoSpeak?: boolean;
+  /** 스피드 프리셋: 설정 화면 없이 의미(양방향)+병음+성조 혼합으로 바로 시작. */
+  speed?: boolean;
+}) {
   const [phase, setPhase] = useState<Phase>("setup");
   const [mode, setMode] = useState<QuizMode>("meaning");
   const [direction, setDirection] = useState<QuizDirection>("forward");
@@ -42,6 +57,9 @@ export function QuizGame({ assessmentId, title }: { assessmentId: string; title:
   // 게임 상태
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const queueRef = useRef<number[]>([]);
+  // 학습 기록(스피드 프리셋 = 4단계): 문항별 단어 정오답 누적
+  const seenRef = useRef<Set<string>>(new Set());
+  const wrongRef = useRef<Set<string>>(new Set());
   const [current, setCurrent] = useState<QuizQuestion | null>(null);
   const [picked, setPicked] = useState<number | null>(null);
   const [answered, setAnswered] = useState(false);
@@ -58,9 +76,11 @@ export function QuizGame({ assessmentId, title }: { assessmentId: string; title:
   const [boardTab, setBoardTab] = useState<"overall" | "klass">("overall");
 
   const usesDirection = mode === "meaning" || mode === "pinyin";
+  // 스피드 프리셋은 혼합 출제라 단일 mode로 귀속 불가 → 전용 리더보드 'speed'.
+  const scoreMode: string = speed ? "speed" : mode;
 
   const loadBoard = useCallback(
-    async (m: QuizMode, scope: "best" | "today") => {
+    async (m: string, scope: "best" | "today") => {
       try {
         setBoard(await getQuizLeaderboard(assessmentId, m, scope));
       } catch {
@@ -71,8 +91,8 @@ export function QuizGame({ assessmentId, title }: { assessmentId: string; title:
   );
 
   useEffect(() => {
-    void loadBoard(mode, boardScope);
-  }, [mode, boardScope, loadBoard]);
+    void loadBoard(scoreMode, boardScope);
+  }, [scoreMode, boardScope, loadBoard]);
 
   function nextQuestion() {
     if (queueRef.current.length === 0) queueRef.current = shuffleIdx(questions.length);
@@ -88,14 +108,18 @@ export function QuizGame({ assessmentId, title }: { assessmentId: string; title:
     setError(null);
     setLoading(true);
     try {
-      const { questions: qs } = await getQuizQuestions(assessmentId, mode, usesDirection ? direction : "forward");
+      const { questions: qs } = speed
+        ? await getSpeedQuizQuestions(assessmentId)
+        : await getQuizQuestions(assessmentId, mode, usesDirection ? direction : "forward");
       if (!qs.length) {
-        setError("이 세트에는 해당 영역의 퀴즈 문제가 없습니다. (예: 문장 데이터 부족)");
+        setError(speed ? "이 세트에는 퀴즈로 낼 단어가 없습니다." : "이 세트에는 해당 영역의 퀴즈 문제가 없습니다. (예: 문장 데이터 부족)");
         setLoading(false);
         return;
       }
       setQuestions(qs);
       queueRef.current = shuffleIdx(qs.length);
+      seenRef.current = new Set();
+      wrongRef.current = new Set();
       setScore(0);
       setStreak(0);
       setCorrectCount(0);
@@ -118,13 +142,21 @@ export function QuizGame({ assessmentId, title }: { assessmentId: string; title:
 
   const endGame = useCallback(async () => {
     setPhase("done");
+    // 스피드 프리셋(4단계)만 학습 기록 전송(독립 퀴즈 페이지는 로깅 안 함)
+    if (speed && seenRef.current.size) {
+      const items = [...seenRef.current].map((wordId) => ({
+        wordId,
+        correct: !wrongRef.current.has(wordId),
+      }));
+      void logStudyAttempts(assessmentId, 4, items);
+    }
     try {
-      await submitQuizScore(assessmentId, mode, score, correctCount, totalCount);
+      await submitQuizScore(assessmentId, scoreMode, score, correctCount, totalCount);
     } catch {
       /* 무시 */
     }
-    void loadBoard(mode, boardScope);
-  }, [assessmentId, mode, score, correctCount, totalCount, boardScope, loadBoard]);
+    void loadBoard(scoreMode, boardScope);
+  }, [assessmentId, speed, scoreMode, score, correctCount, totalCount, boardScope, loadBoard]);
 
   // 1초 틱: 문항 타이머 + 게임 타이머
   useEffect(() => {
@@ -148,6 +180,10 @@ export function QuizGame({ assessmentId, title }: { assessmentId: string; title:
     setPicked(i);
     setTotalCount((c) => c + 1);
     const correct = i === current.correctIndex;
+    if (speed && current.wordId) {
+      seenRef.current.add(current.wordId);
+      if (!correct) wrongRef.current.add(current.wordId);
+    }
     if (correct) {
       const ratio = Math.max(0, perQLeft) / perQLimit;
       const mult = 1 + Math.min(streak, 5) * 0.1;
@@ -167,7 +203,11 @@ export function QuizGame({ assessmentId, title }: { assessmentId: string; title:
     setPicked(null);
     setStreak(0);
     setTotalCount((c) => c + 1);
-  }, [answered, current]);
+    if (speed && current.wordId) {
+      seenRef.current.add(current.wordId);
+      wrongRef.current.add(current.wordId); // 모르겠어요/시간초과 = 오답
+    }
+  }, [answered, current, speed]);
 
   // 문항 시간 초과 → 오답 처리
   useEffect(() => {
@@ -198,7 +238,38 @@ export function QuizGame({ assessmentId, title }: { assessmentId: string; title:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, current, answered, perQLeft, streak]);
 
+  // 스피드 프리셋: 설정 화면 없이 마운트 시 자동 시작(1회)
+  useEffect(() => {
+    if (speed && phase === "setup") void startGame();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [speed]);
+
+  // 자동 음성: 새 문제가 뜰 때 한자가 "문제"로 보일 때만 발음 재생(정답 노출 방지)
+  useEffect(() => {
+    if (!autoSpeak || phase !== "playing" || !current) return;
+    if (current.prompt === current.hanzi) void speakOnce(current.hanzi);
+    return () => cancelSpeech();
+  }, [autoSpeak, phase, current]);
+
   // ── 렌더 ──
+  if (phase === "setup" && speed) {
+    // 스피드 프리셋: 설정 없이 자동 시작 → 로딩/에러만 표시
+    return (
+      <div className="card" style={{ textAlign: "center" }}>
+        {error ? (
+          <>
+            <p className="error">{error}</p>
+            <button className="btn" type="button" onClick={() => void startGame()} disabled={loading}>
+              다시 시도
+            </button>
+          </>
+        ) : (
+          <p className="muted">스피드 퀴즈 준비 중…</p>
+        )}
+      </div>
+    );
+  }
+
   if (phase === "setup") {
     return (
       <div>
@@ -270,7 +341,7 @@ export function QuizGame({ assessmentId, title }: { assessmentId: string; title:
     return (
       <div>
         <div className="card row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-          <span className="badge">{MODES.find((m) => m.key === mode)?.label} 퀴즈</span>
+          <span className="badge">{speed ? "스피드 퀴즈" : `${MODES.find((m) => m.key === mode)?.label} 퀴즈`}</span>
           <div className="row" style={{ alignItems: "center", gap: 14 }}>
             <span className="muted">연속 {streak} · {correctCount}/{totalCount}</span>
             <b style={{ color: "var(--primary)" }}>{score.toLocaleString()}점</b>
@@ -377,7 +448,7 @@ export function QuizGame({ assessmentId, title }: { assessmentId: string; title:
         <div className="score-big">{score.toLocaleString()}</div>
         <div className="muted">정답 {correctCount} / {totalCount}문항</div>
         <div className="row" style={{ justifyContent: "center", marginTop: 10 }}>
-          <button className="btn" type="button" onClick={() => setPhase("setup")}>다시 하기</button>
+          <button className="btn" type="button" onClick={() => (speed ? void startGame() : setPhase("setup"))}>다시 하기</button>
         </div>
       </div>
       <LeaderboardCard board={board} boardScope={boardScope} setBoardScope={setBoardScope} boardTab={boardTab} setBoardTab={setBoardTab} />

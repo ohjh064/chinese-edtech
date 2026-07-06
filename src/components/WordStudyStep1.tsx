@@ -2,21 +2,25 @@
 
 import { useEffect, useRef, useState } from "react";
 import { speakOnce, cancelSpeech } from "@/lib/tts";
-import { getWordImage } from "@/app/actions/study";
+import { getWordImage, logStudyAttempts } from "@/app/actions/study";
+import { AddToWordbookButton } from "@/components/AddToWordbookButton";
 
 export interface StudyCard {
   wordId: string;
   term: string;
   pinyin: string;
+  pinyinRaw: string; // 성조 없는 로마자 병음(음절 공백 구분) — 딕테이션 철자용
+  tones: number[]; // 음절별 성조(경성=0) — 딕테이션 성조용
   meanings: string[];
   example: string | null;
+  imageUrl: string | null; // 교사가 붙인 이미지(있으면 자동검색보다 우선)
 }
 
 function wait(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export function WordStudyStep1({ cards }: { cards: StudyCard[] }) {
+export function WordStudyStep1({ assessmentId, cards }: { assessmentId: string; cards: StudyCard[] }) {
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(true);
   const [done, setDone] = useState(false);
@@ -27,17 +31,22 @@ export function WordStudyStep1({ cards }: { cards: StudyCard[] }) {
   const total = cards.length;
   const card = cards[idx];
 
-  // 단어 바뀔 때 이미지 지연 로드(한 번에 1개 → 레이트리밋 안전)
+  // 단어 바뀔 때 이미지 로드: 교사가 붙인 이미지가 있으면 우선 사용, 없으면 자동검색(Openverse) 폴백
   useEffect(() => {
     if (!card) return;
     let cancelled = false;
+    if (card.imageUrl) {
+      setImgUrl(card.imageUrl);
+      setImgLoading(false);
+      return;
+    }
     setImgUrl(null);
     setImgLoading(true);
     getWordImage(card.term)
       .then((u) => { if (!cancelled) { setImgUrl(u); setImgLoading(false); } })
       .catch(() => { if (!cancelled) setImgLoading(false); });
     return () => { cancelled = true; };
-  }, [card?.term]);
+  }, [card?.term, card?.imageUrl]);
 
   // 자동 재생: 발음 2회 → 짧은 지연 후 다음 단어
   useEffect(() => {
@@ -54,7 +63,12 @@ export function WordStudyStep1({ cards }: { cards: StudyCard[] }) {
       await wait(800);
       if (!alive()) return;
       if (idx + 1 < total) setIdx(idx + 1);
-      else { setDone(true); setPlaying(false); }
+      else {
+        setDone(true);
+        setPlaying(false);
+        // 한 바퀴 완료 → 들은 단어들을 학습 기록(교사 추적용, 정오답 없음)
+        void logStudyAttempts(assessmentId, 1, cards.map((c) => ({ wordId: c.wordId, correct: null })));
+      }
     })();
     return () => { runId.current++; cancelSpeech(); };
   }, [idx, playing, done, card?.term, total]);
@@ -117,6 +131,18 @@ export function WordStudyStep1({ cards }: { cards: StudyCard[] }) {
         <button className="btn" type="button" onClick={togglePlay}>{playing ? "⏸ 일시정지" : "▶ 자동재생"}</button>
         <button className="btn secondary" type="button" onClick={replay}>🔊 다시듣기</button>
         <button className="btn secondary" type="button" onClick={goNext} disabled={idx >= total - 1}>다음 →</button>
+        <AddToWordbookButton
+          key={card.wordId}
+          item={{
+            kind: "word",
+            hanzi: card.term,
+            pinyin: card.pinyin,
+            meaning: card.meanings.join(", "),
+            example: card.example,
+            wordId: card.wordId,
+            source: "study",
+          }}
+        />
       </div>
       <p className="muted" style={{ fontSize: 12, textAlign: "center" }}>
         발음이 2번 나온 뒤 다음 단어로 자동으로 넘어갑니다. (소리가 안 나오면 ‘자동재생’을 한 번 눌러주세요)

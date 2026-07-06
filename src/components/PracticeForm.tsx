@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { splitSyllables, normalizeSyllable, toDisplayWord } from "@/grading/pinyin.js";
+import { toDisplayWord } from "@/grading/pinyin.js";
+import { convertPinyin } from "@/lib/pinyin-input";
 import {
   gradePracticeAttempt,
   type PracticeAnswerInput,
@@ -21,17 +22,6 @@ interface RawInput {
   pinyin: string;
   meaning: string;
   sentence: string;
-}
-
-function convertPinyin(raw: string): { pinyin: string; tones: number[] } {
-  const plains: string[] = [];
-  const tones: number[] = [];
-  for (const tok of splitSyllables(raw)) {
-    const { plain, tone } = normalizeSyllable(tok);
-    plains.push(plain);
-    tones.push(tone ?? 0);
-  }
-  return { pinyin: plains.join(" "), tones };
 }
 
 export function PracticeForm({

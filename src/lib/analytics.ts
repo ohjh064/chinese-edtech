@@ -77,6 +77,64 @@ export function aggregatePracticeWeakness(rows: PracticeLogRow[]): WeakWord[] {
     .sort((a, b) => b.wrong - a.wrong || b.ratio - a.ratio || a.wordId.localeCompare(b.wordId));
 }
 
+// ───────── 단어장 학습 추적 집계 (교사용, study_logs) ─────────
+
+export interface StudyLogRow {
+  word_id: string;
+  step: number; // 1..5
+  correct: boolean | null; // null = 1단계(듣기)
+}
+
+export interface StudyStepStat {
+  step: number;
+  attempted: number; // 이 단계에서 학습한(등장한) 고유 단어 수
+  correct: number; // 정답 단어 수(1단계는 0)
+  wrong: number; // 오답 단어 수
+  wrongWordIds: string[]; // 오답 단어 id
+}
+
+export interface StudySummary {
+  learnedWordIds: string[]; // 전 단계에서 한 번이라도 학습한 고유 단어
+  wrongWordIds: string[]; // 한 번이라도 틀린 고유 단어
+  byStep: StudyStepStat[]; // 단계 오름차순
+}
+
+/**
+ * study_logs 행들을 학습 요약으로 집계(한 학생 또는 한 세트 범위의 rows 입력).
+ * (word, step)별로 한 번이라도 correct===false면 그 단계에서 오답 처리.
+ */
+export function summarizeStudyLogs(rows: StudyLogRow[]): StudySummary {
+  const stepWords = new Map<number, Map<string, { wrong: boolean }>>();
+  const learned = new Set<string>();
+  const wrongAll = new Set<string>();
+  for (const r of rows) {
+    learned.add(r.word_id);
+    if (r.correct === false) wrongAll.add(r.word_id);
+    let m = stepWords.get(r.step);
+    if (!m) {
+      m = new Map();
+      stepWords.set(r.step, m);
+    }
+    const w = m.get(r.word_id) ?? { wrong: false };
+    if (r.correct === false) w.wrong = true;
+    m.set(r.word_id, w);
+  }
+  const byStep: StudyStepStat[] = [...stepWords.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([step, m]) => {
+      const wrongWordIds = [...m.entries()].filter(([, w]) => w.wrong).map(([id]) => id);
+      const attempted = m.size;
+      const wrong = wrongWordIds.length;
+      const correct = step === 1 ? 0 : attempted - wrong;
+      return { step, attempted, correct, wrong, wrongWordIds };
+    });
+  return {
+    learnedWordIds: [...learned],
+    wrongWordIds: [...wrongAll],
+    byStep,
+  };
+}
+
 export function aggregateErrors(
   detailsList: SubmissionDetails[],
 ): ErrorAggregation {

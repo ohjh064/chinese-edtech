@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import {
   createWordSet,
@@ -13,6 +14,7 @@ import {
   type WordSetWordInput,
 } from "@/app/actions/wordsets";
 import { AiGenerateWords } from "@/components/AiGenerateWords";
+import { WordImagePicker } from "@/components/wordsets/WordImagePicker";
 import { parsePastedWords } from "@/lib/paste-words";
 
 async function loadSuggest() {
@@ -30,7 +32,14 @@ export interface SetSummary {
 }
 
 type Row = WordSetWordInput;
-const emptyRow = (): Row => ({ hanzi: "", correctPinyin: "", correctTones: "", acceptableMeanings: "", exampleSentence: "" });
+const emptyRow = (): Row => ({ hanzi: "", correctPinyin: "", correctTones: "", acceptableMeanings: "", exampleSentence: "", imageUrl: "" });
+
+/** 이미지 검색 기본어: 첫 번째 뜻(없으면 한자). */
+function imageQueryFor(r: Row | undefined): string {
+  if (!r) return "";
+  const meaning = (r.acceptableMeanings || "").split(",")[0]?.trim();
+  return meaning || r.hanzi.trim();
+}
 
 export function WordSetManager({
   initialSets,
@@ -45,6 +54,7 @@ export function WordSetManager({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<"words" | "dist">("words");
   const [rows, setRows] = useState<Row[]>([]);
+  const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const [paste, setPaste] = useState("");
   const [distClasses, setDistClasses] = useState<Set<string>>(new Set());
   const [distStudents, setDistStudents] = useState<Set<string>>(new Set());
@@ -273,6 +283,7 @@ export function WordSetManager({
                 <span className="badge" style={{ marginLeft: 8 }}>{selected.status === "published" ? "공개" : "비공개"}</span>
               </div>
               <div className="row" style={{ gap: 8 }}>
+                <Link className="btn secondary" href={`/teacher/${selected.id}/learning`}>학습 현황</Link>
                 <button className="btn secondary" type="button" onClick={togglePublish} disabled={busy}>
                   {selected.status === "published" ? "비공개로" : "공개"}
                 </button>
@@ -350,6 +361,24 @@ export function WordSetManager({
                         <label>예문(선택)</label>
                         <input value={r.exampleSentence ?? ""} onChange={(e) => updateRow(i, { exampleSentence: e.target.value })} />
                       </div>
+                      <div className="field" style={{ marginBottom: 0, width: 78 }}>
+                        <label>이미지</label>
+                        {r.imageUrl ? (
+                          <div className="row" style={{ gap: 4, alignItems: "center" }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={r.imageUrl}
+                              alt=""
+                              onClick={() => setPickerIndex(i)}
+                              title="이미지 변경"
+                              style={{ width: 40, height: 30, objectFit: "cover", borderRadius: 4, border: "1px solid var(--border)", cursor: "pointer" }}
+                            />
+                            <button className="btn secondary" type="button" style={{ padding: "2px 6px" }} title="이미지 제거" onClick={() => updateRow(i, { imageUrl: "" })}>✕</button>
+                          </div>
+                        ) : (
+                          <button className="btn secondary" type="button" style={{ padding: "6px 8px" }} onClick={() => setPickerIndex(i)}>🖼 추가</button>
+                        )}
+                      </div>
                       <button className="btn secondary" type="button" onClick={() => setRows((rs) => rs.filter((_, idx) => idx !== i))}>삭제</button>
                     </div>
                   ))}
@@ -391,6 +420,17 @@ export function WordSetManager({
           </>
         )}
       </div>
+
+      <WordImagePicker
+        open={pickerIndex !== null}
+        wordLabel={pickerIndex !== null ? (rows[pickerIndex]?.hanzi || rows[pickerIndex]?.acceptableMeanings || "") : ""}
+        initialQuery={pickerIndex !== null ? imageQueryFor(rows[pickerIndex]) : ""}
+        currentUrl={pickerIndex !== null ? (rows[pickerIndex]?.imageUrl || "") : ""}
+        hasNext={pickerIndex !== null && pickerIndex < rows.length - 1}
+        onPick={(url) => { if (pickerIndex !== null) updateRow(pickerIndex, { imageUrl: url }); }}
+        onNext={() => setPickerIndex((idx) => (idx !== null && idx < rows.length - 1 ? idx + 1 : idx))}
+        onClose={() => setPickerIndex(null)}
+      />
     </div>
   );
 }

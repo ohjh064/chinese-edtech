@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Topbar } from "@/components/Topbar";
+import { TeacherTabs } from "@/components/TeacherTabs";
 import { StudioStart } from "@/components/studio/StudioStart";
 import type { Profile, Unit } from "@/lib/database.types";
 
@@ -29,10 +30,8 @@ export default async function StudioIndex() {
     <>
       <Topbar name={profile.name || "교사"} role="teacher" home="/teacher" />
       <div className="container">
-        <Link href="/teacher" className="muted">
-          ← 평가 관리
-        </Link>
-        <h1>Teacher Studio · 회화 콘텐츠</h1>
+        <TeacherTabs active="studio" />
+        <h1>회화 세트 · Teacher Studio</h1>
         <p className="muted">
           교과서 단원과 상황(롤플레이)을 만들고 배포하세요. AI로 상황을 자동 생성할 수 있습니다.
         </p>

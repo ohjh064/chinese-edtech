@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Topbar } from "@/components/Topbar";
 import { aggregatePracticeWeakness, type PracticeLogRow } from "@/lib/analytics";
-import type { Assessment, Profile, Submission, Word } from "@/lib/database.types";
+import { StudentMessageReply } from "@/components/MessageComposer";
+import type { Assessment, Profile, Submission, Word, StudentMessage } from "@/lib/database.types";
 
 export default async function StudentDashboard() {
   const supabase = await createSupabaseServerClient();
@@ -26,6 +27,14 @@ export default async function StudentDashboard() {
     .select("*")
     .eq("status", "published")
     .order("created_at", { ascending: false });
+
+  // 공유된 문제 은행 시험지 (RLS can_view_qset로 본인 배부분만 조회됨)
+  const { data: qsets } = await supabase
+    .from("qbank_sets")
+    .select("id, title, created_at")
+    .eq("shared", true)
+    .order("created_at", { ascending: false });
+  const sharedPapers = (qsets ?? []) as { id: string; title: string; created_at: string }[];
 
   const { data: mySubs } = await supabase
     .from("submissions")
@@ -50,6 +59,19 @@ export default async function StudentDashboard() {
     .order("attempt_at", { ascending: false })
     .limit(500);
   const weak = aggregatePracticeWeakness((logs ?? []) as PracticeLogRow[]).slice(0, 5);
+
+  // 선생님 메시지(교사→학생 + 내 답글). 학생은 교사 프로필명을 RLS로 못 읽으므로 "선생님"으로 표기.
+  const { data: msgsRaw } = await supabase
+    .from("student_messages")
+    .select("*")
+    .eq("student_id", user.id)
+    .order("created_at", { ascending: true });
+  const msgs = (msgsRaw ?? []) as StudentMessage[];
+  const teacherIds = [...new Set(msgs.map((m) => m.teacher_id))];
+  const threads = teacherIds.map((tid) => ({
+    teacherId: tid,
+    messages: msgs.filter((m) => m.teacher_id === tid),
+  }));
   const weakWordIds = weak.map((w) => w.wordId);
   const { data: weakWords } = weakWordIds.length
     ? await supabase
@@ -70,11 +92,19 @@ export default async function StudentDashboard() {
       .map((a) => a.id) ?? [],
   );
 
+  // 단어 세트(연습 모드) / 평가(시험) 분리 표시
+  const assessmentList = (assessments as Assessment[] | null) ?? [];
+  const wordSets = assessmentList.filter((a) => a.mode === "practice");
+  const exams = assessmentList.filter((a) => a.mode === "exam");
+
   return (
     <>
       <Topbar name={profile?.name || "학생"} role="student" home="/student" />
       <div className="container">
         <div className="row" style={{ justifyContent: "flex-end" }}>
+          <Link className="btn secondary" href="/student/vocab">
+            내 단어장
+          </Link>
           <Link className="btn secondary" href="/student/notebook">
             AI 오답노트
           </Link>
@@ -82,6 +112,31 @@ export default async function StudentDashboard() {
             회화 학습 →
           </Link>
         </div>
+        {threads.map((t) => (
+          <div className="card" key={t.teacherId} style={{ borderColor: "var(--primary)" }}>
+            <b>선생님 메시지</b>
+            <div style={{ margin: "8px 0", display: "grid", gap: 8 }}>
+              {t.messages.map((m) => (
+                <div
+                  key={m.id}
+                  style={{
+                    justifySelf: m.sender_role === "student" ? "end" : "start",
+                    maxWidth: "80%",
+                    background: m.sender_role === "student" ? "#f1f5f9" : "var(--primary-weak)",
+                    borderRadius: 10,
+                    padding: "8px 12px",
+                  }}
+                >
+                  <div className="muted" style={{ fontSize: 11 }}>
+                    {m.sender_role === "student" ? "나" : "선생님"} · {new Date(m.created_at).toLocaleString("ko-KR")}
+                  </div>
+                  <div style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{m.body}</div>
+                </div>
+              ))}
+            </div>
+            <StudentMessageReply teacherId={t.teacherId} />
+          </div>
+        ))}
         {weak.length > 0 && (
           <div className="card" style={{ background: "var(--primary-weak)" }}>
             <b>복습 추천</b>
@@ -121,81 +176,107 @@ export default async function StudentDashboard() {
           </div>
         )}
 
-        <h1>내 평가</h1>
-        {(!assessments || assessments.length === 0) && (
-          <div className="card muted">현재 응시 가능한 평가가 없습니다.</div>
+        <h1>단어 세트</h1>
+        <p className="muted" style={{ marginTop: -4 }}>들으며 익히고 매칭·받아쓰기·퀴즈·Writing으로 연습해요.</p>
+        {wordSets.length === 0 ? (
+          <div className="card muted">아직 학습할 단어 세트가 없습니다.</div>
+        ) : (
+          wordSets.map(renderCard)
         )}
-        {(assessments as Assessment[] | null)?.map((a) => {
-          const sub = subByAssessment.get(a.id);
-          const done = sub && sub.status !== "in_progress";
-          const isPractice = a.mode === "practice";
-          const returned = !!sub?.returned_at && sub.status === "in_progress";
-          const canPractice = a.allow_practice || returnedAssessmentIds.has(a.id);
-          return (
-            <div className="card" key={a.id}>
-              <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <div style={{ fontSize: 17, fontWeight: 600 }}>
-                    {a.title}
-                    {returned && <span className="badge" style={{ marginLeft: 8 }}>돌려받음</span>}
-                  </div>
-                  <div className="muted" style={{ fontSize: 13 }}>
-                    {a.unit} · {isPractice ? "연습" : "평가"}
-                    {a.time_limit_sec ? ` · ${Math.round(a.time_limit_sec / 60)}분` : ""}
-                  </div>
+
+        <h1 style={{ marginTop: 28 }}>내 평가</h1>
+        {exams.length === 0 ? (
+          <div className="card muted">현재 응시할 평가가 없습니다.</div>
+        ) : (
+          exams.map(renderCard)
+        )}
+
+        {sharedPapers.length > 0 && (
+          <>
+            <h1 style={{ marginTop: 28 }}>시험지</h1>
+            <p className="muted" style={{ marginTop: -4 }}>선생님이 공유한 시험지예요. 풀고 채점하면 정답·해설을 볼 수 있어요.</p>
+            {sharedPapers.map((p) => (
+              <div className="card" key={p.id}>
+                <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: 17, fontWeight: 600 }}>{p.title}</div>
+                  <Link className="btn" href={`/student/qbank/${p.id}`}>풀기 →</Link>
                 </div>
-                {isPractice ? (
-                  <div className="row" style={{ gap: 8, alignItems: "center" }}>
-                    <Link className="btn" href={`/student/study/${a.id}`}>
-                      단어장 학습
-                    </Link>
-                    <Link className="btn secondary" href={`/student/practice/${a.id}`}>
-                      연습하기
-                    </Link>
-                    <Link className="btn secondary" href={`/student/quiz/${a.id}`}>
-                      퀴즈
-                    </Link>
-                    <Link className="btn secondary" href={`/student/flashcards/${a.id}`}>
-                      플래시카드
-                    </Link>
-                  </div>
-                ) : (
-                  <div className="row" style={{ gap: 8, alignItems: "center" }}>
-                    {done ? (
-                      <Link className="btn secondary" href={`/student/result/${sub!.id}`}>
-                        결과 보기
-                      </Link>
-                    ) : (
-                      <Link className="btn" href={`/student/take/${a.id}`}>
-                        {sub ? (returned ? "다시 제출하기" : "이어서 응시") : "응시 시작"}
-                      </Link>
-                    )}
-                    {canPractice && (
-                      <>
-                        <Link className="btn secondary" href={`/student/practice/${a.id}`}>
-                          연습하기
-                        </Link>
-                        <Link className="btn secondary" href={`/student/quiz/${a.id}`}>
-                          퀴즈
-                        </Link>
-                        <Link className="btn secondary" href={`/student/flashcards/${a.id}`}>
-                          플래시카드
-                        </Link>
-                      </>
-                    )}
-                  </div>
-                )}
               </div>
-              {returned && (
-                <p className="muted" style={{ fontSize: 13, margin: "8px 0 0" }}>
-                  ↩ 교사가 돌려줬습니다.
-                  {sub?.returned_note ? ` 코멘트: ${sub.returned_note}` : " 답안을 고쳐 다시 제출하거나 연습해 보세요."}
-                </p>
-              )}
-            </div>
-          );
-        })}
+            ))}
+          </>
+        )}
       </div>
     </>
   );
+
+  function renderCard(a: Assessment) {
+    const sub = subByAssessment.get(a.id);
+    const done = sub && sub.status !== "in_progress";
+    const isPractice = a.mode === "practice";
+    const returned = !!sub?.returned_at && sub.status === "in_progress";
+    const canPractice = a.allow_practice || returnedAssessmentIds.has(a.id);
+    return (
+      <div className="card" key={a.id}>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 600 }}>
+              {a.title}
+              {returned && <span className="badge" style={{ marginLeft: 8 }}>돌려받음</span>}
+            </div>
+            <div className="muted" style={{ fontSize: 13 }}>
+              {a.unit} · {isPractice ? "연습" : "평가"}
+              {a.time_limit_sec ? ` · ${Math.round(a.time_limit_sec / 60)}분` : ""}
+            </div>
+          </div>
+          {isPractice ? (
+            <div className="row" style={{ gap: 8, alignItems: "center" }}>
+              <Link className="btn" href={`/student/study/${a.id}`}>
+                단어장 학습
+              </Link>
+              <Link className="btn secondary" href={`/student/practice/${a.id}`}>
+                연습하기
+              </Link>
+              <Link className="btn secondary" href={`/student/quiz/${a.id}`}>
+                퀴즈
+              </Link>
+              <Link className="btn secondary" href={`/student/flashcards/${a.id}`}>
+                플래시카드
+              </Link>
+            </div>
+          ) : (
+            <div className="row" style={{ gap: 8, alignItems: "center" }}>
+              {done ? (
+                <Link className="btn secondary" href={`/student/result/${sub!.id}`}>
+                  결과 보기
+                </Link>
+              ) : (
+                <Link className="btn" href={`/student/take/${a.id}`}>
+                  {sub ? (returned ? "다시 제출하기" : "이어서 응시") : "응시 시작"}
+                </Link>
+              )}
+              {canPractice && (
+                <>
+                  <Link className="btn secondary" href={`/student/practice/${a.id}`}>
+                    연습하기
+                  </Link>
+                  <Link className="btn secondary" href={`/student/quiz/${a.id}`}>
+                    퀴즈
+                  </Link>
+                  <Link className="btn secondary" href={`/student/flashcards/${a.id}`}>
+                    플래시카드
+                  </Link>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+        {returned && (
+          <p className="muted" style={{ fontSize: 13, margin: "8px 0 0" }}>
+            ↩ 교사가 돌려줬습니다.
+            {sub?.returned_note ? ` 코멘트: ${sub.returned_note}` : " 답안을 고쳐 다시 제출하거나 연습해 보세요."}
+          </p>
+        )}
+      </div>
+    );
+  }
 }

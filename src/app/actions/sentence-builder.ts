@@ -8,7 +8,7 @@ import {
   createSupabaseServerClient,
   createSupabaseAdminClient,
 } from "@/lib/supabase/server";
-import { shuffleTokens, checkSentence, hintTokens } from "@/lib/sentence-build";
+import { shuffleTokens, checkSentence, hintTokens, splitTrailingPunct } from "@/lib/sentence-build";
 
 async function requireStudent() {
   const supabase = await createSupabaseServerClient();
@@ -35,7 +35,8 @@ async function assertViewable(
 export interface BuilderItem {
   id: string;
   promptKo: string;
-  tokens: string[]; // 셔플됨
+  tokens: string[]; // 셔플됨(문장 끝 부호 제외)
+  ending: string; // 문장 끝 부호(예: "。") — 배열 영역 끝에 고정 표시, 타일 아님
   count: number;
   difficulty: string;
 }
@@ -59,13 +60,18 @@ export async function getSentenceBuilder(situationId: string): Promise<BuilderIt
     difficulty: string;
   }[])
     .filter((it) => (it.tokens?.length ?? 0) >= 2)
-    .map((it, i) => ({
-      id: it.id,
-      promptKo: it.target_ko ?? "",
-      tokens: shuffleTokens(it.tokens, seed + i),
-      count: it.tokens.length,
-      difficulty: it.difficulty,
-    }));
+    .map((it, i) => {
+      // 끝 부호(마침표 등)를 떼어 타일에서 제외 → 마지막 단어 힌트 노출 방지
+      const { core, ending } = splitTrailingPunct(it.tokens);
+      return {
+        id: it.id,
+        promptKo: it.target_ko ?? "",
+        tokens: shuffleTokens(core, seed + i),
+        ending,
+        count: core.length,
+        difficulty: it.difficulty,
+      };
+    });
 }
 
 export interface GradeResult {
@@ -88,7 +94,9 @@ export async function gradeSentence(
   if (!item) throw new Error("문항을 찾을 수 없습니다");
   await assertViewable(supabase, item.situation_id);
 
-  const correct = checkSentence(ordered, item.tokens);
+  // 학생은 끝 부호 없는 타일만 배열하므로, 정답도 끝 부호를 뗀 core끼리 비교한다.
+  const { core } = splitTrailingPunct(item.tokens);
+  const correct = checkSentence(ordered, core);
   if (correct) {
     await supabase.from("level_progress").upsert(
       {
@@ -96,7 +104,7 @@ export async function gradeSentence(
         situation_id: item.situation_id,
         activity: "builder",
         cleared: true,
-        score: item.tokens.length,
+        score: core.length,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "student_id,situation_id,activity" },
@@ -117,8 +125,9 @@ export async function sentenceHint(itemId: string, count: number): Promise<strin
     .single<{ situation_id: string; tokens: string[] }>();
   if (!item) throw new Error("문항을 찾을 수 없습니다");
   await assertViewable(supabase, item.situation_id);
-  // 정답 전체 순서가 새지 않도록 마지막 토큰은 절대 공개하지 않는다(앞부분 일부만).
-  const max = Math.max(1, item.tokens.length - 1);
+  // 끝 부호를 뗀 core 기준. 정답 전체 순서가 새지 않도록 마지막 토큰은 절대 공개하지 않는다(앞부분 일부만).
+  const { core } = splitTrailingPunct(item.tokens);
+  const max = Math.max(1, core.length - 1);
   const n = Math.min(Math.max(0, Math.floor(count)), max);
-  return hintTokens(item.tokens, n);
+  return hintTokens(core, n);
 }

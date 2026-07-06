@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shuffleTokens, checkSentence, hintTokens } from "./sentence-build";
+import { shuffleTokens, checkSentence, hintTokens, splitTrailingPunct } from "./sentence-build";
 
 describe("sentence-build", () => {
   it("shuffleTokens는 같은 토큰 집합을 유지한다", () => {
@@ -28,5 +28,38 @@ describe("sentence-build", () => {
   it("hintTokens는 앞 N개를 반환한다", () => {
     expect(hintTokens(["我", "是", "学生"], 2)).toEqual(["我", "是"]);
     expect(hintTokens(["我"], 5)).toEqual(["我"]);
+  });
+
+  describe("splitTrailingPunct (끝 부호 분리 — 마지막 단어 힌트 방지)", () => {
+    it("마지막 토큰에 붙은 마침표를 떼어낸다", () => {
+      expect(splitTrailingPunct(["请", "给我", "一瓶", "水。"])).toEqual({
+        core: ["请", "给我", "一瓶", "水"],
+        ending: "。",
+      });
+    });
+
+    it("부호만으로 된 별도 토큰도 끝으로 옮긴다", () => {
+      expect(splitTrailingPunct(["请", "给我", "水", "。"])).toEqual({
+        core: ["请", "给我", "水"],
+        ending: "。",
+      });
+    });
+
+    it("끝 부호가 없으면 그대로 둔다", () => {
+      expect(splitTrailingPunct(["我", "是", "学生"])).toEqual({
+        core: ["我", "是", "学生"],
+        ending: "",
+      });
+    });
+
+    it("물음표/느낌표/라틴 마침표도 처리한다", () => {
+      expect(splitTrailingPunct(["你", "好吗？"]).ending).toBe("？");
+      expect(splitTrailingPunct(["Wait", "here."]).ending).toBe(".");
+    });
+
+    it("떼어낸 core는 셔플·채점에 그대로 쓰인다(부호 미포함)", () => {
+      const { core } = splitTrailingPunct(["请", "给我", "一瓶", "水。"]);
+      expect(checkSentence(["请", "给我", "一瓶", "水"], core)).toBe(true);
+    });
   });
 });

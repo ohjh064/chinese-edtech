@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { submitQuizScore, getQuizLeaderboard, type Leaderboard } from "@/app/actions/quiz";
+import { logStudyAttempts } from "@/app/actions/study";
 import { speakOnce, cancelSpeech } from "@/lib/tts";
 import type { StudyCard } from "@/components/WordStudyStep1";
 
@@ -37,6 +38,8 @@ export function MatchGame({ assessmentId, cards }: { assessmentId: string; title
   const total = allPairs.length;
 
   const poolRef = useRef<Pair[]>([]);
+  const matchedRef = useRef<Set<string>>(new Set()); // 학습 기록: 등장(매칭)한 단어
+  const wrongRef = useRef<Set<string>>(new Set()); // 학습 기록: 오답 시도가 있던 단어
   const [batch, setBatch] = useState<Pair[]>([]);
   const [right, setRight] = useState<Pair[]>([]);
   const [sel, setSel] = useState<Sel>(null);
@@ -75,6 +78,13 @@ export function MatchGame({ assessmentId, cards }: { assessmentId: string; title
   useEffect(() => {
     if (phase !== "done") return;
     let alive = true;
+    // 학습 기록(교사 추적용): 등장한 단어를 오답 여부와 함께 전송
+    const engaged = new Set<string>([...matchedRef.current, ...wrongRef.current]);
+    void logStudyAttempts(
+      assessmentId,
+      2,
+      [...engaged].map((wordId) => ({ wordId, correct: !wrongRef.current.has(wordId) })),
+    );
     (async () => {
       try {
         await submitQuizScore(assessmentId, "match", score, matched, total);
@@ -112,6 +122,7 @@ export function MatchGame({ assessmentId, cards }: { assessmentId: string; title
       return copy;
     });
 
+    matchedRef.current.add(wordId);
     setMatched((m) => m + 1);
     setScore((s) => s + nextPoints);
     const term = batch.find((c) => c.wordId === wordId)?.term;
@@ -132,7 +143,11 @@ export function MatchGame({ assessmentId, cards }: { assessmentId: string; title
     if (sel.side === side) { setSel({ side, wordId }); return; } // 같은 열 재선택
     // 서로 다른 열 → 짝 판정(wordId 동일성)
     if (sel.wordId === wordId) doMatch(wordId);
-    else flashWrong(sel.wordId + sel.side, wordId + side);
+    else {
+      wrongRef.current.add(sel.wordId);
+      wrongRef.current.add(wordId);
+      flashWrong(sel.wordId + sel.side, wordId + side);
+    }
   }
 
   function shuffleRight() {
@@ -152,6 +167,8 @@ export function MatchGame({ assessmentId, cards }: { assessmentId: string; title
 
   function restart() {
     cancelSpeech();
+    matchedRef.current = new Set();
+    wrongRef.current = new Set();
     const s = shuffle(allPairs);
     const b = s.slice(0, BATCH);
     poolRef.current = s.slice(BATCH);

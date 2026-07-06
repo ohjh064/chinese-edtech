@@ -15,52 +15,16 @@ import {
   type QuizQuestion,
   type QuizItem,
 } from "@/lib/quiz-gen";
-import type { Assessment, Word, WordKey, SentenceTaskTypeDb } from "@/lib/database.types";
-
-async function assertCanPractice(
-  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
-  assessmentId: string,
-  userId: string,
-): Promise<Assessment> {
-  const { data: assessment } = await supabase
-    .from("assessments")
-    .select("*")
-    .eq("id", assessmentId)
-    .single<Assessment>();
-  if (!assessment) throw new Error("접근할 수 없는 평가입니다");
-  let can = assessment.mode === "practice" || assessment.allow_practice;
-  if (!can) {
-    const { data: returned } = await supabase
-      .from("submissions")
-      .select("id")
-      .eq("assessment_id", assessmentId)
-      .eq("student_id", userId)
-      .not("returned_at", "is", null)
-      .limit(1)
-      .maybeSingle();
-    can = !!returned;
-  }
-  if (!can) throw new Error("퀴즈가 허용되지 않은 평가입니다");
-  return assessment;
-}
+import type { Word, WordKey, SentenceTaskTypeDb } from "@/lib/database.types";
+import { assertCanPractice } from "@/lib/study-access";
 
 export interface QuizPayload {
   questions: QuizQuestion[];
   sentenceTaskType: SentenceTaskTypeDb;
 }
 
-export async function getQuizQuestions(
-  assessmentId: string,
-  mode: QuizMode,
-  direction: QuizDirection,
-): Promise<QuizPayload> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("로그인이 필요합니다");
-  const assessment = await assertCanPractice(supabase, assessmentId, user.id);
-
+/** words + word_keys(admin) 로드 → QuizItem[]. 정답키는 서버에서만 다룬다. */
+async function loadQuizItems(assessmentId: string): Promise<QuizItem[]> {
   const admin = createSupabaseAdminClient();
   const { data: words } = await admin
     .from("words")
@@ -76,7 +40,7 @@ export async function getQuizQuestions(
     ((keys ?? []) as WordKey[]).map((k) => [k.word_id, k]),
   );
 
-  const items: QuizItem[] = wordList.map((w) => {
+  return wordList.map((w) => {
     const k = keyByWord.get(w.id);
     return {
       wordId: w.id,
@@ -91,7 +55,21 @@ export async function getQuizQuestions(
       explanation: k?.explanation ?? undefined,
     };
   });
+}
 
+export async function getQuizQuestions(
+  assessmentId: string,
+  mode: QuizMode,
+  direction: QuizDirection,
+): Promise<QuizPayload> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("로그인이 필요합니다");
+  const assessment = await assertCanPractice(supabase, assessmentId, user.id);
+
+  const items = await loadQuizItems(assessmentId);
   const seed = Math.floor(Math.random() * 1_000_000_000);
   const questions = buildQuestions(items, {
     mode,
@@ -102,9 +80,43 @@ export async function getQuizQuestions(
   return { questions, sentenceTaskType: assessment.sentence_task_type };
 }
 
+/** 단어장 학습 4단계(스피드 퀴즈)용: 의미(양방향)+병음+성조를 한 판에 섞어 출제. */
+export async function getSpeedQuizQuestions(assessmentId: string): Promise<QuizPayload> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("로그인이 필요합니다");
+  const assessment = await assertCanPractice(supabase, assessmentId, user.id);
+
+  const items = await loadQuizItems(assessmentId);
+  const specs: { mode: QuizMode; direction: QuizDirection }[] = [
+    { mode: "meaning", direction: "forward" }, // 단어→뜻 (한자 프롬프트)
+    { mode: "meaning", direction: "reverse" }, // 뜻→단어
+    { mode: "pinyin", direction: "forward" }, // 한자→병음
+    { mode: "tone", direction: "forward" }, // 성조
+  ];
+  const baseSeed = Math.floor(Math.random() * 1_000_000_000);
+  const pool: QuizQuestion[] = specs.flatMap((s, i) =>
+    buildQuestions(items, {
+      mode: s.mode,
+      direction: s.direction,
+      sentenceTaskType: assessment.sentence_task_type,
+      seed: baseSeed + i,
+    }),
+  );
+
+  // 모드가 인접하지 않도록 합친 풀을 한 번 더 섞는다(서버라 Math.random 사용 가능).
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j]!, pool[i]!];
+  }
+  return { questions: pool, sentenceTaskType: assessment.sentence_task_type };
+}
+
 export async function submitQuizScore(
   assessmentId: string,
-  mode: string, // 'pinyin'|'tone'|'meaning'|'sentence'|'match' (quiz_scores.mode=text)
+  mode: string, // 'pinyin'|'tone'|'meaning'|'sentence'|'match'|'dictation' (quiz_scores.mode=text)
   score: number,
   correct: number,
   total: number,

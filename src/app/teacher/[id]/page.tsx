@@ -125,6 +125,9 @@ export default async function AssessmentDetail({
           <Link className="btn secondary" href={`/teacher/${id}/monitor`}>
             응시 현황
           </Link>
+          <Link className="btn secondary" href={`/teacher/${id}/learning`}>
+            학습 현황
+          </Link>
           <Link className="btn secondary" href={`/teacher/${id}/analytics`}>
             분석
           </Link>

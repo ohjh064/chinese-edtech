@@ -72,8 +72,11 @@ export default async function StudyPage({
       wordId: w.id,
       term: w.hanzi,
       pinyin: k?.correct_pinyin ? toDisplayWord(k.correct_pinyin, k.correct_tones) : "",
+      pinyinRaw: k?.correct_pinyin ?? "",
+      tones: k?.correct_tones ?? [],
       meanings: k?.acceptable_meanings ?? [],
       example: k?.example_sentence ?? null,
+      imageUrl: w.image_url ?? null,
     };
   });
 
@@ -83,7 +86,7 @@ export default async function StudyPage({
       <div className="container">
         <Link href="/student" className="muted">← 내 학습</Link>
         <h1>{assessment.title}</h1>
-        <p className="muted">1단계는 들으며 익히고, 2단계는 단어와 뜻을 짝지어 맞춰요.</p>
+        <p className="muted">1단계는 들으며 익히고, 2단계는 단어와 뜻을 짝지어 맞춰요. 3단계는 발음을 듣고 병음과 성조를 받아쓰고, 4단계는 빠르게 뜻·병음·성조를 맞히고, 5단계는 뜻을 보고 병음과 성조를 직접 써요.</p>
         {cards.length === 0 ? (
           <div className="card muted">아직 단어가 없습니다.</div>
         ) : (

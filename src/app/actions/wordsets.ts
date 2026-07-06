@@ -89,6 +89,7 @@ export interface WordSetWordInput {
   correctTones: string; // "3 3"
   acceptableMeanings: string; // 쉼표 구분
   exampleSentence?: string;
+  imageUrl?: string; // 단어 대표 이미지(학습 1단계 노출) — words.image_url
 }
 
 export async function saveWordSetWords(
@@ -119,7 +120,7 @@ export async function saveWordSetWords(
       keptIds.add(w.id);
       const { error: wErr } = await supabase
         .from("words")
-        .update({ ord: i, hanzi: w.hanzi.trim(), syllable_count: syllableCount(w.correctPinyin), error_prompt: null })
+        .update({ ord: i, hanzi: w.hanzi.trim(), syllable_count: syllableCount(w.correctPinyin), error_prompt: null, image_url: w.imageUrl?.trim() || null })
         .eq("id", w.id);
       if (wErr) throw new Error(wErr.message);
       const { error: kErr } = await supabase
@@ -129,7 +130,7 @@ export async function saveWordSetWords(
     } else {
       const { data: word, error: wErr } = await supabase
         .from("words")
-        .insert({ assessment_id: assessmentId, ord: i, hanzi: w.hanzi.trim(), syllable_count: syllableCount(w.correctPinyin), error_prompt: null })
+        .insert({ assessment_id: assessmentId, ord: i, hanzi: w.hanzi.trim(), syllable_count: syllableCount(w.correctPinyin), error_prompt: null, image_url: w.imageUrl?.trim() || null })
         .select("id")
         .single<{ id: string }>();
       if (wErr || !word) throw new Error(wErr?.message ?? "문항 저장 실패");
@@ -172,10 +173,10 @@ export async function getWordSetWords(assessmentId: string): Promise<(WordSetWor
   await assertOwnsAssessment(supabase, userId, assessmentId);
   const { data: words } = await supabase
     .from("words")
-    .select("id, hanzi")
+    .select("id, hanzi, image_url")
     .eq("assessment_id", assessmentId)
     .order("ord");
-  const list = (words ?? []) as { id: string; hanzi: string }[];
+  const list = (words ?? []) as { id: string; hanzi: string; image_url: string | null }[];
   if (!list.length) return [];
   const { data: keys } = await supabase
     .from("word_keys")
@@ -199,6 +200,7 @@ export async function getWordSetWords(assessmentId: string): Promise<(WordSetWor
       correctTones: (k?.correct_tones ?? []).join(" "),
       acceptableMeanings: (k?.acceptable_meanings ?? []).join(", "),
       exampleSentence: k?.example_sentence ?? "",
+      imageUrl: w.image_url ?? "",
     };
   });
 }

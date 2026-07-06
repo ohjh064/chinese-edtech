@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -241,9 +242,14 @@ export function RosterManager({
                     <td>{s.email}</td>
                     <td>{resetPw[s.id] ? <code>{resetPw[s.id]}</code> : "—"}</td>
                     <td>
-                      <button type="button" className="btn secondary" onClick={() => onReset(s.id)}>
-                        비밀번호 재설정
-                      </button>
+                      <div className="row" style={{ gap: 6 }}>
+                        <Link className="btn secondary" href={`/teacher/student/${s.id}`} style={{ padding: "4px 10px", fontSize: 13 }}>
+                          학습 현황
+                        </Link>
+                        <button type="button" className="btn secondary" onClick={() => onReset(s.id)}>
+                          비밀번호 재설정
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

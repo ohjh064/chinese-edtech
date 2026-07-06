@@ -100,8 +100,11 @@ create table if not exists words (
   hanzi text not null,
   syllable_count int,                 -- 입력 칸 수 힌트
   error_prompt text,                  -- 오류 찾기형: 학생에게 보여줄 오류 문장
+  image_url text,                     -- 교사가 붙인 대표 이미지(단어장 학습 1단계 노출)
   created_at timestamptz not null default now()
 );
+-- 기존 DB 업그레이드(멱등)
+alter table words add column if not exists image_url text;
 
 -- 정답키(학생 read 절대 불가) — words와 분리. PRD §12 정답키 보호
 create table if not exists word_keys (
@@ -563,6 +566,27 @@ alter table mistakes enable row level security;
 drop policy if exists mistakes_student_all on mistakes;
 create policy mistakes_student_all on mistakes for all
   using (student_id = auth.uid()) with check (student_id = auth.uid());
+
+-- 내 단어장(개인 약점 컬렉션): 학생이 직접 담는 단어/표현. 오답노트(mistakes)와 별개.
+create table if not exists wordbook_items (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references profiles(id) on delete cascade,
+  kind text not null default 'word',            -- 'word' | 'expression'
+  hanzi text not null,
+  pinyin text,
+  meaning text,
+  example text,
+  word_id uuid references words(id) on delete set null,
+  situation_id uuid references situations(id) on delete set null,
+  source text,                                  -- flashcard | study | expression | manual
+  created_at timestamptz not null default now(),
+  unique (student_id, kind, hanzi)
+);
+create index if not exists idx_wordbook_student on wordbook_items(student_id, created_at desc);
+alter table wordbook_items enable row level security;
+drop policy if exists wordbook_items_student_all on wordbook_items;
+create policy wordbook_items_student_all on wordbook_items for all
+  using (student_id = auth.uid()) with check (student_id = auth.uid());
 create or replace function sync_practice_mistakes(p_teacher uuid, p_items jsonb)
 returns void language plpgsql security definer set search_path = public as $$
 declare it jsonb;
@@ -680,3 +704,173 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function handle_new_user();
+
+-- ──────────────── 단어장 학습 추적(교사용) + 교사↔학생 1:1 메시지 ────────────────
+-- study_logs: 단어장 학습 각 단계(1~5)에서 학생이 학습/오답한 단어를 단어별로 기록(교사 추적용).
+-- student_messages: 교사-학생 1:1 스레드(교사가 학습 현황 보며 메시지, 학생 대시보드에서 답글).
+create table if not exists study_logs (
+  id uuid primary key default gen_random_uuid(),
+  student_id uuid not null references profiles(id) on delete cascade,
+  assessment_id uuid not null references assessments(id) on delete cascade,
+  word_id uuid not null references words(id) on delete cascade,
+  step int not null,                  -- 1..5 (1=듣기,2=매칭,3=딕테이션,4=스피드,5=Writing)
+  correct boolean,                    -- null = 정오답 없음(1단계 듣기)
+  attempt_at timestamptz not null default now()
+);
+create index if not exists idx_study_logs_lookup on study_logs(assessment_id, student_id, step);
+create index if not exists idx_study_logs_student on study_logs(student_id, attempt_at desc);
+alter table study_logs enable row level security;
+drop policy if exists study_logs_student_ins on study_logs;
+create policy study_logs_student_ins on study_logs for insert with check (student_id = auth.uid());
+drop policy if exists study_logs_student_read on study_logs;
+create policy study_logs_student_read on study_logs for select using (student_id = auth.uid());
+drop policy if exists study_logs_teacher_read on study_logs;
+create policy study_logs_teacher_read on study_logs for select using (owns_assessment(assessment_id));
+
+create table if not exists student_messages (
+  id uuid primary key default gen_random_uuid(),
+  teacher_id uuid not null references profiles(id) on delete cascade,
+  student_id uuid not null references profiles(id) on delete cascade,
+  assessment_id uuid references assessments(id) on delete set null,
+  sender_role text not null check (sender_role in ('teacher','student')),
+  body text not null,
+  read_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_student_messages_thread on student_messages(teacher_id, student_id, created_at);
+create index if not exists idx_student_messages_student on student_messages(student_id, created_at desc);
+alter table student_messages enable row level security;
+drop policy if exists sm_teacher_all on student_messages;
+create policy sm_teacher_all on student_messages for all
+  using (teacher_id = auth.uid() and is_teacher())
+  with check (teacher_id = auth.uid() and is_teacher() and sender_role = 'teacher');
+drop policy if exists sm_student_read on student_messages;
+create policy sm_student_read on student_messages for select using (student_id = auth.uid());
+drop policy if exists sm_student_reply on student_messages;
+create policy sm_student_reply on student_messages for insert
+  with check (student_id = auth.uid() and sender_role = 'student');
+drop policy if exists sm_student_mark_read on student_messages;
+create policy sm_student_mark_read on student_messages for update
+  using (student_id = auth.uid()) with check (student_id = auth.uid());
+
+-- ──────────────── 문제 은행 — 기출 스타일 학습 + AI 문항 생성 + 보관함 ────────────────
+create table if not exists qbank_types (
+  id uuid primary key default gen_random_uuid(),
+  teacher_id uuid not null references profiles(id) on delete cascade,
+  name text not null,
+  ord int not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_qbank_types_teacher on qbank_types(teacher_id, ord);
+alter table qbank_types enable row level security;
+drop policy if exists qbank_types_owner_all on qbank_types;
+create policy qbank_types_owner_all on qbank_types for all
+  using (teacher_id = auth.uid()) with check (teacher_id = auth.uid());
+
+create table if not exists qbank_examples (
+  id uuid primary key default gen_random_uuid(),
+  teacher_id uuid not null references profiles(id) on delete cascade,
+  type_id uuid references qbank_types(id) on delete set null,
+  qnum text,                          -- 원래 시험지의 문항 번호
+  passage text,
+  stem text not null default '',
+  choices jsonb not null default '[]',
+  answer_index int,
+  explanation text,
+  source text,
+  created_at timestamptz not null default now()
+);
+alter table qbank_examples add column if not exists qnum text;
+create index if not exists idx_qbank_examples_teacher on qbank_examples(teacher_id, type_id);
+alter table qbank_examples enable row level security;
+drop policy if exists qbank_examples_owner_all on qbank_examples;
+create policy qbank_examples_owner_all on qbank_examples for all
+  using (teacher_id = auth.uid()) with check (teacher_id = auth.uid());
+
+create table if not exists qbank_settings (
+  teacher_id uuid primary key references profiles(id) on delete cascade,
+  guidelines text,
+  updated_at timestamptz not null default now()
+);
+alter table qbank_settings enable row level security;
+drop policy if exists qbank_settings_owner_all on qbank_settings;
+create policy qbank_settings_owner_all on qbank_settings for all
+  using (teacher_id = auth.uid()) with check (teacher_id = auth.uid());
+
+create table if not exists qbank_sets (
+  id uuid primary key default gen_random_uuid(),
+  teacher_id uuid not null references profiles(id) on delete cascade,
+  title text not null,
+  passage text,
+  spec jsonb,
+  shared boolean not null default false,
+  class_id uuid references classes(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_qbank_sets_teacher on qbank_sets(teacher_id, created_at desc);
+alter table qbank_sets enable row level security;
+drop policy if exists qbank_sets_owner_all on qbank_sets;
+create policy qbank_sets_owner_all on qbank_sets for all
+  using (teacher_id = auth.uid()) with check (teacher_id = auth.uid());
+
+create table if not exists qbank_items (
+  id uuid primary key default gen_random_uuid(),
+  set_id uuid not null references qbank_sets(id) on delete cascade,
+  ord int not null default 0,
+  passage text,                       -- 제시문(빈칸 문장/지문)
+  stem text not null default '',
+  choices jsonb not null default '[]',
+  answer_index int not null default 0,
+  explanation text,
+  type_id uuid references qbank_types(id) on delete set null,  -- 유형(보관함/시험지 편집용)
+  created_at timestamptz not null default now()
+);
+alter table qbank_items add column if not exists passage text;
+alter table qbank_items add column if not exists type_id uuid references qbank_types(id) on delete set null;
+create index if not exists idx_qbank_items_set on qbank_items(set_id, ord);
+alter table qbank_items enable row level security;
+drop policy if exists qbank_items_owner_all on qbank_items;
+create policy qbank_items_owner_all on qbank_items for all
+  using (exists (select 1 from qbank_sets s where s.id = set_id and s.teacher_id = auth.uid()))
+  with check (exists (select 1 from qbank_sets s where s.id = set_id and s.teacher_id = auth.uid()));
+
+-- 시험지 학생 공유(배부 + 자격 판정 + 세트 메타 학생 read). 문항 정답은 서버액션(admin)으로만 노출.
+create table if not exists qbank_distributions (
+  id uuid primary key default gen_random_uuid(),
+  set_id uuid not null references qbank_sets(id) on delete cascade,
+  class_id uuid references classes(id) on delete cascade,
+  student_id uuid references profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  check ((class_id is not null) <> (student_id is not null))
+);
+create unique index if not exists uniq_qdist_class on qbank_distributions(set_id, class_id) where student_id is null;
+create unique index if not exists uniq_qdist_student on qbank_distributions(set_id, student_id) where class_id is null;
+create index if not exists idx_qdist_set on qbank_distributions(set_id);
+create index if not exists idx_qdist_student on qbank_distributions(student_id);
+alter table qbank_distributions enable row level security;
+drop policy if exists qbank_dist_teacher_all on qbank_distributions;
+create policy qbank_dist_teacher_all on qbank_distributions for all
+  using (exists (select 1 from qbank_sets s where s.id = set_id and s.teacher_id = auth.uid()))
+  with check (exists (select 1 from qbank_sets s where s.id = set_id and s.teacher_id = auth.uid()));
+
+create or replace function can_view_qset(p_set uuid)
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from qbank_sets s
+    where s.id = p_set and s.shared = true and (
+      exists (select 1 from enrollments e where e.class_id = s.class_id and e.student_id = auth.uid())
+      or exists (
+        select 1 from qbank_distributions d
+        join enrollments e on e.class_id = d.class_id
+        where d.set_id = s.id and e.student_id = auth.uid()
+      )
+      or exists (
+        select 1 from qbank_distributions d
+        where d.set_id = s.id and d.student_id = auth.uid()
+      )
+    )
+  );
+$$;
+drop policy if exists qbank_sets_student_read on qbank_sets;
+create policy qbank_sets_student_read on qbank_sets for select
+  using (can_view_qset(id));
