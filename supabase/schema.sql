@@ -364,6 +364,30 @@ drop policy if exists quiz_scores_teacher_read on quiz_scores;
 create policy quiz_scores_teacher_read on quiz_scores for select
   using (owns_assessment(assessment_id));
 
+-- 대본 미션: 무작위 단어로 상황 대본 작성 → AI 루브릭 채점(50점). 학생 제출·점수·피드백 저장, 교사 열람.
+create table if not exists script_submissions (
+  id uuid primary key default gen_random_uuid(),
+  assessment_id uuid not null references assessments(id) on delete cascade,
+  student_id uuid not null references profiles(id) on delete cascade,
+  situation text,
+  words jsonb not null default '[]',
+  script text not null default '',
+  usage_score int not null default 0,
+  notation_score int not null default 0,
+  total int not null default 0,
+  feedback jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_script_sub_assessment on script_submissions(assessment_id, created_at desc);
+create index if not exists idx_script_sub_student on script_submissions(student_id, created_at desc);
+alter table script_submissions enable row level security;
+drop policy if exists script_sub_student_all on script_submissions;
+create policy script_sub_student_all on script_submissions for all
+  using (student_id = auth.uid()) with check (student_id = auth.uid());
+drop policy if exists script_sub_teacher_read on script_submissions;
+create policy script_sub_teacher_read on script_submissions for select
+  using (owns_assessment(assessment_id));
+
 -- ──────────────── v2: 단원/상황/표현/질문 (AI 롤플레이 코치 토대) ────────────────
 create table if not exists units (
   id uuid primary key default gen_random_uuid(),

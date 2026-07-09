@@ -250,6 +250,26 @@ export interface Mistake {
   last_at: string;
 }
 
+// ───────── 대본 미션(단어 세트) 제출 ─────────
+export interface ScriptWordCard {
+  hanzi: string;
+  pinyin: string;
+  meaning: string;
+}
+export interface ScriptSubmission {
+  id: string;
+  assessment_id: string;
+  student_id: string;
+  situation: string | null;
+  words: ScriptWordCard[];
+  script: string;
+  usage_score: number;
+  notation_score: number;
+  total: number;
+  feedback: unknown;
+  created_at: string;
+}
+
 // ───────── 단어장 학습 추적(교사용) + 교사↔학생 메시지 ─────────
 export interface StudyLog {
   id: string;

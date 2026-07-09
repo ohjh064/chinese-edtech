@@ -284,6 +284,7 @@ export function WordSetManager({
               </div>
               <div className="row" style={{ gap: 8 }}>
                 <Link className="btn secondary" href={`/teacher/${selected.id}/learning`}>학습 현황</Link>
+                <Link className="btn secondary" href={`/teacher/${selected.id}/scripts`}>대본 제출</Link>
                 <button className="btn secondary" type="button" onClick={togglePublish} disabled={busy}>
                   {selected.status === "published" ? "비공개로" : "공개"}
                 </button>

@@ -242,6 +242,9 @@ export default async function StudentDashboard() {
               <Link className="btn secondary" href={`/student/flashcards/${a.id}`}>
                 플래시카드
               </Link>
+              <Link className="btn secondary" href={`/student/script/${a.id}`}>
+                대본 미션
+              </Link>
             </div>
           ) : (
             <div className="row" style={{ gap: 8, alignItems: "center" }}>
