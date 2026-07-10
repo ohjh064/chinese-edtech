@@ -12,6 +12,7 @@ const SOURCE_LABEL: Record<string, string> = {
   flashcard: "플래시카드",
   study: "단어학습",
   expression: "회화 표현",
+  exam: "시험지",
   manual: "직접",
 };
 

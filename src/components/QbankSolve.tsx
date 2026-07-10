@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { MarkedText, circled } from "@/components/questionbank/ExamPreview";
+import { WordClipper } from "@/components/WordClipper";
 import { gradeSharedQbank, type SharedQbank, type QbankGradeResult } from "@/app/actions/question-bank";
 
 /** 공유된 시험지 풀기 + 자가채점. 정답/해설은 '채점' 후 서버가 돌려준다. */
@@ -50,6 +51,7 @@ export function QbankSolve({ setId, data }: { setId: string; data: SharedQbank }
         </div>
       )}
 
+      <WordClipper>
       {data.passage?.trim() && (
         <div className="card" style={{ whiteSpace: "pre-wrap", background: "#fbfbfc" }}>
           <MarkedText text={data.passage} />
@@ -110,6 +112,7 @@ export function QbankSolve({ setId, data }: { setId: string; data: SharedQbank }
           );
         })}
       </div>
+      </WordClipper>
 
       {error && <p className="error">{error}</p>}
       {!result && (

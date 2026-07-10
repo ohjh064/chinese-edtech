@@ -37,3 +37,13 @@ export function suggestFromHanzi(hanzi: string): PinyinSuggestion {
   }
   return { pinyin: plains.join(" "), tones };
 }
+
+/**
+ * 표시용 병음 — 성조 부호 포함, 비(非)중국어 문자는 제거.
+ * 예: "多少錢？" → "duō shǎo qián". 내 단어장 자동 채우기 등 사람이 읽는 표기에 사용.
+ */
+export function displayPinyin(hanzi: string): string {
+  const han = hanzi.trim();
+  if (!han) return "";
+  return pinyin(han, { toneType: "symbol", type: "string", nonZh: "removed" }).trim();
+}
