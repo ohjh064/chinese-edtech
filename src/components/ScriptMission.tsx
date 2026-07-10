@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { SpeakButton } from "@/components/SpeakButton";
 import { YuqiTutor } from "@/components/YuqiTutor";
 import { startScriptMission, suggestSituation, gradeScript, type ScriptGradeResult } from "@/app/actions/script-mission";
@@ -10,6 +11,7 @@ import type { ScriptWordCard } from "@/lib/database.types";
 export function ScriptMission({ assessmentId }: { assessmentId: string }) {
   const [loading, setLoading] = useState(true);
   const [situation, setSituation] = useState("");
+  const [situationFixed, setSituationFixed] = useState(false);
   const [words, setWords] = useState<ScriptWordCard[]>([]);
   const [script, setScript] = useState("");
   const [grading, setGrading] = useState(false);
@@ -54,6 +56,7 @@ export function ScriptMission({ assessmentId }: { assessmentId: string }) {
     try {
       const r = await startScriptMission(assessmentId);
       setSituation(r.situation);
+      setSituationFixed(r.situationFixed);
       setWords(r.words);
     } catch (e) {
       setError(e instanceof Error ? e.message : "미션을 불러오지 못했어요.");
@@ -99,21 +102,28 @@ export function ScriptMission({ assessmentId }: { assessmentId: string }) {
         </div>
       )}
 
-      {/* 상황(미션) — AI 배정 또는 직접 설정 */}
+      {/* 상황(미션) — 교사 지정(고정) 또는 AI 배정/직접 설정 */}
       <div className="card" style={{ background: "var(--primary-weak)" }}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <b>미션 상황</b>
+          <b>미션 상황{situationFixed && <span className="badge" style={{ marginLeft: 6 }}>선생님 지정</span>}</b>
           {!result && (
             <div className="row" style={{ gap: 6 }}>
-              <button type="button" className="btn secondary" style={{ padding: "4px 10px", fontSize: 13 }} onClick={reroll} disabled={rerolling}>
-                {rerolling ? "받는 중…" : "🎲 AI 상황 받기"}
-              </button>
+              {!situationFixed && (
+                <button type="button" className="btn secondary" style={{ padding: "4px 10px", fontSize: 13 }} onClick={reroll} disabled={rerolling}>
+                  {rerolling ? "받는 중…" : "🎲 AI 상황 받기"}
+                </button>
+              )}
               <button type="button" className="btn secondary" style={{ padding: "4px 10px", fontSize: 13 }} onClick={draw}>단어 다시 뽑기</button>
             </div>
           )}
         </div>
-        {result ? (
-          <p style={{ margin: "6px 0 0" }}>{situation}</p>
+        {result || situationFixed ? (
+          <>
+            <p style={{ margin: "6px 0 0" }}>{situation}</p>
+            {situationFixed && !result && (
+              <p className="muted" style={{ fontSize: 12, margin: "4px 0 0" }}>선생님이 정한 미션이에요. 이 상황에 맞는 대본을 작성하세요.</p>
+            )}
+          </>
         ) : (
           <>
             <textarea rows={2} value={situation} onChange={(e) => setSituation(e.target.value)} placeholder="상황을 직접 입력하거나 ‘AI 상황 받기’로 배정받으세요." style={{ marginTop: 6 }} />
@@ -121,6 +131,18 @@ export function ScriptMission({ assessmentId }: { assessmentId: string }) {
           </>
         )}
       </div>
+
+      {!result && (
+        <Link href={`/student/script/${assessmentId}/practice`} className="card" style={{ display: "block", textDecoration: "none", color: "inherit", borderColor: "var(--primary)" }}>
+          <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <div>
+              <b>🧩 표현 문장 배열 연습</b>
+              <div className="muted" style={{ fontSize: 13 }}>대본에 필요한 표현을 단어 배열로 익히고, 어순 튜터의 도움을 받아보세요.</div>
+            </div>
+            <span className="btn secondary" style={{ whiteSpace: "nowrap" }}>연습하기 →</span>
+          </div>
+        </Link>
+      )}
 
       {/* 제시 단어 카드 */}
       <div className="card">

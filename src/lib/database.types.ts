@@ -45,6 +45,7 @@ export interface Assessment {
   reveal_answers_in_practice: boolean;
   proctoring: boolean;
   allow_practice: boolean;
+  script_situation: string | null;
   status: AssessmentStatus;
   created_at: string;
 }

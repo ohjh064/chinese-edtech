@@ -166,6 +166,19 @@ export async function deleteWordSet(assessmentId: string): Promise<void> {
   revalidatePath("/teacher/wordsets");
 }
 
+/** 대본 미션 상황(교사 설정)을 저장. 빈 문자열이면 null(=AI 배정)로 되돌린다. */
+export async function saveScriptSituation(assessmentId: string, situation: string): Promise<void> {
+  const { supabase, userId } = await requireTeacher();
+  await assertOwnsAssessment(supabase, userId, assessmentId);
+  const value = situation.trim() || null;
+  const { error } = await supabase
+    .from("assessments")
+    .update({ script_situation: value })
+    .eq("id", assessmentId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/teacher/wordsets");
+}
+
 // ───────────────────── 단어 로드(편집용) ─────────────────────
 
 export async function getWordSetWords(assessmentId: string): Promise<(WordSetWordInput & { id: string })[]> {

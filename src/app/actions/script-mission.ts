@@ -16,7 +16,11 @@ import { toDisplayWord } from "@/grading/pinyin.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import * as z from "zod/v4";
+import { createHash } from "node:crypto";
+import { shuffleTokens, checkSentence, hintTokens, splitTrailingPunct } from "@/lib/sentence-build";
+import { orderTutorTurn, type OrderTutorTurn, type OrderTutorReply } from "@/lib/order-tutor";
 import type { Assessment, Word, WordKey, ScriptWordCard } from "@/lib/database.types";
+import type { BuilderItem, GradeResult } from "@/app/actions/sentence-builder";
 
 const MODEL = "claude-sonnet-4-6";
 const WORD_COUNT = 5;
@@ -71,6 +75,8 @@ const SituationSchema = z.object({ situationKo: z.string() });
 export interface ScriptMissionStart {
   situation: string;
   words: ScriptWordCard[];
+  /** 교사가 상황을 지정했으면 true — 학생은 상황을 바꾸지 못하는 고정 미션. */
+  situationFixed: boolean;
 }
 
 /** 주어진 단어들로 AI가 상황(미션문)을 생성. 키 없음/실패 시 세트 설명 기반 폴백. */
@@ -116,7 +122,7 @@ async function aiSituation(assessment: Assessment, words: ScriptWordCard[]): Pro
   }
 }
 
-/** 무작위 단어 N개 추첨 + AI 상황(미션문) 생성. */
+/** 무작위 단어 N개 추첨 + 상황(미션문). 교사 지정 상황이 있으면 고정, 없으면 AI 생성. */
 export async function startScriptMission(assessmentId: string): Promise<ScriptMissionStart> {
   const { supabase, userId } = await requireStudent();
   const assessment = await assertCanPractice(supabase, assessmentId, userId);
@@ -124,8 +130,13 @@ export async function startScriptMission(assessmentId: string): Promise<ScriptMi
   const all = await loadWordCards(assessmentId);
   if (all.length < 2) throw new Error("대본 미션에는 단어가 2개 이상 필요합니다.");
   const words = shuffle(all).slice(0, Math.min(WORD_COUNT, all.length));
+
+  const teacherSituation = assessment.script_situation?.trim();
+  if (teacherSituation) {
+    return { situation: teacherSituation, words, situationFixed: true };
+  }
   const situation = await aiSituation(assessment, words);
-  return { situation, words };
+  return { situation, words, situationFixed: false };
 }
 
 /** 현재 단어들로 AI 상황만 다시 배정(단어는 그대로). '직접 설정' 화면에서 사용. */
@@ -394,4 +405,178 @@ export async function askYuqi(input: {
     readyToSubmit: out.readyToSubmit,
     turnsLeft: Math.max(0, MAX_TUTOR_TURNS - studentTurns - 1),
   };
+}
+
+// ───────────────────── 대본 표현 문장 배열 연습 (AI 생성 + 캐시) ─────────────────────
+
+const BUILD_COUNT = 6;
+
+interface StoredBuildItem {
+  id: string;
+  ko: string;
+  tokens: string[]; // 정답 낱말 순서(끝 부호 포함) — 서버 전용, 클라이언트 미전송
+}
+
+const ScriptBuildSchema = z.object({
+  items: z.array(
+    z.object({
+      zh: z.string().describe("세트 단어를 활용한 자연스럽고 짧은 중국어 문장(간체, 4~8 낱말)"),
+      ko: z.string().describe("그 문장의 한국어 뜻"),
+      tokens: z
+        .array(z.string())
+        .describe("zh를 낱말 단위로 분절한 배열. 순서대로 공백 없이 이어붙이면 zh와 정확히 같아야 함. 끝 부호(。？！)는 마지막 낱말에 붙이거나 별도 토큰으로."),
+    }),
+  ),
+});
+
+/** 단어 목록(한자) 기반 캐시 키 — 세트 단어가 바뀌면 재생성된다. */
+function wordsHash(words: ScriptWordCard[]): string {
+  return createHash("sha1").update(words.map((w) => w.hanzi).join("|")).digest("hex").slice(0, 12);
+}
+
+/** 캐시에서 생성 문항을 읽고 없으면 AI로 생성·저장(정답 포함, 서버 전용). */
+async function loadScriptBuildItems(assessment: Assessment, words: ScriptWordCard[]): Promise<StoredBuildItem[]> {
+  const admin = createSupabaseAdminClient();
+  const key = `scriptbuild:${assessment.id}:${wordsHash(words)}`;
+  const { data: hit } = await admin
+    .from("ai_cache")
+    .select("result")
+    .eq("key", key)
+    .maybeSingle<{ result: { items: StoredBuildItem[] } }>();
+  if (hit?.result?.items?.length) return hit.result.items;
+
+  const apiKey = getAnthropicKey();
+  if (!apiKey) throw new Error("AI 문항 생성이 비활성화되어 있습니다(서버 ANTHROPIC_API_KEY 필요).");
+
+  const system = [
+    "너는 중국어 문장 배열(어순) 연습 문항 출제자다.",
+    `아래 '제시 단어'들을 활용해, 학습자가 낱말 타일을 배열해 만들 수 있는 자연스럽고 짧은 중국어 문장 ${BUILD_COUNT}개를 만들어라.`,
+    "규칙:",
+    "- 각 문장은 간화자(간체)로 쓰고, 제시 단어 중 하나 이상을 포함해라. 길이는 4~8 낱말 정도로 쉽게.",
+    "- tokens는 문장을 '낱말 단위'로 분절한 배열이다. 순서대로 공백 없이 이어붙이면 원문(zh)과 정확히 같아야 한다.",
+    "- 문장 끝 부호(。？！)는 마지막 낱말에 붙이거나 별도 토큰으로 둬라.",
+    "- ko는 그 문장의 자연스러운 한국어 뜻.",
+    "- 매번 서로 다른 문형·표현으로 다양하게 만들어라.",
+  ].join("\n");
+  const user = [
+    assessment.script_situation?.trim()
+      ? `[대본 미션 상황]\n${assessment.script_situation.trim()}`
+      : assessment.unit?.trim()
+        ? `[주제]\n${assessment.unit.trim()}`
+        : "",
+    "[제시 단어]",
+    ...words.map((w) => `- ${w.hanzi}${w.pinyin ? ` (${w.pinyin})` : ""}${w.meaning ? ` : ${w.meaning}` : ""}`),
+    "",
+    `정확히 ${BUILD_COUNT}개의 items를 반환해라.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  let res;
+  try {
+    res = await new Anthropic({ apiKey }).messages.parse({
+      model: MODEL,
+      max_tokens: 2048,
+      thinking: { type: "disabled" },
+      output_config: { format: zodOutputFormat(ScriptBuildSchema), effort: "low" },
+      system,
+      messages: [{ role: "user", content: user }],
+    });
+  } catch (e) {
+    throw new Error(aiErrorMessage(e));
+  }
+
+  // 채점 일관성: tokens의 core가 2개 이상인 것만 채택(끝 부호 분리 후).
+  const items: StoredBuildItem[] = [];
+  (res.parsed_output?.items ?? []).forEach((it, i) => {
+    const tokens = (it.tokens ?? []).map((t) => (t ?? "").trim()).filter(Boolean);
+    if (tokens.length < 2) return;
+    const { core } = splitTrailingPunct(tokens);
+    if (core.length < 2) return;
+    items.push({ id: `it${i}`, ko: (it.ko ?? "").trim(), tokens });
+  });
+  if (!items.length) throw new Error("연습 문항을 생성하지 못했어요. 잠시 후 다시 시도하세요.");
+
+  try {
+    await admin.from("ai_cache").upsert({ key, kind: "scriptbuild", result: { items } }, { onConflict: "key" });
+  } catch {
+    /* 캐시 실패 무시 */
+  }
+  return items;
+}
+
+/** 대본 표현 문장 배열 연습 문항(셔플, 정답 미포함). */
+export async function getScriptSentenceBuilder(assessmentId: string): Promise<BuilderItem[]> {
+  const { supabase, userId } = await requireStudent();
+  const assessment = await assertCanPractice(supabase, assessmentId, userId);
+  const words = await loadWordCards(assessmentId);
+  if (words.length < 1) throw new Error("이 세트에는 단어가 없습니다.");
+  const items = await loadScriptBuildItems(assessment, words);
+  const seed = Math.floor(Math.random() * 1_000_000_000);
+  return items.map((it, i) => {
+    const { core, ending } = splitTrailingPunct(it.tokens);
+    return {
+      id: it.id,
+      promptKo: it.ko,
+      tokens: shuffleTokens(core, seed + i),
+      ending,
+      count: core.length,
+      difficulty: "normal",
+    };
+  });
+}
+
+/** 배열 결과 채점(서버 정답과 core 비교). 정답 시 원문·뜻 공개. */
+export async function gradeScriptSentence(
+  assessmentId: string,
+  itemId: string,
+  ordered: string[],
+): Promise<GradeResult> {
+  const { supabase, userId } = await requireStudent();
+  const assessment = await assertCanPractice(supabase, assessmentId, userId);
+  const words = await loadWordCards(assessmentId);
+  const items = await loadScriptBuildItems(assessment, words);
+  const item = items.find((it) => it.id === itemId);
+  if (!item) throw new Error("문항을 찾을 수 없습니다. 다시 시작해 주세요.");
+  const { core, ending } = splitTrailingPunct(item.tokens);
+  return checkSentence(ordered, core)
+    ? { correct: true, targetZh: core.join("") + ending, targetKo: item.ko || undefined }
+    : { correct: false };
+}
+
+/** 앞부분 힌트(마지막 토큰은 절대 공개하지 않음). */
+export async function scriptSentenceHint(
+  assessmentId: string,
+  itemId: string,
+  count: number,
+): Promise<string[]> {
+  const { supabase, userId } = await requireStudent();
+  const assessment = await assertCanPractice(supabase, assessmentId, userId);
+  const words = await loadWordCards(assessmentId);
+  const items = await loadScriptBuildItems(assessment, words);
+  const item = items.find((it) => it.id === itemId);
+  if (!item) throw new Error("문항을 찾을 수 없습니다.");
+  const { core } = splitTrailingPunct(item.tokens);
+  const max = Math.max(1, core.length - 1);
+  const n = Math.min(Math.max(0, Math.floor(count)), max);
+  return hintTokens(core, n);
+}
+
+/** 대본 표현 연습용 어순 튜터 한 턴(정답은 ai_cache에서 서버가 로드). 위치 인자 — .bind(null, assessmentId)로 사용. */
+export async function askScriptOrderTutor(
+  assessmentId: string,
+  itemId: string,
+  tokens: string[],
+  arranged: string[],
+  history: OrderTutorTurn[],
+  message: string,
+): Promise<OrderTutorReply> {
+  const { supabase, userId } = await requireStudent();
+  const assessment = await assertCanPractice(supabase, assessmentId, userId);
+  const words = await loadWordCards(assessmentId);
+  const items = await loadScriptBuildItems(assessment, words);
+  const item = items.find((it) => it.id === itemId);
+  if (!item) throw new Error("문항을 찾을 수 없습니다.");
+  const { core } = splitTrailingPunct(item.tokens);
+  return orderTutorTurn({ promptKo: item.ko, tokens, target: core, arranged, history, message });
 }

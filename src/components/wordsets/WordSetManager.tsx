@@ -10,6 +10,7 @@ import {
   deleteWordSet,
   getDistributions,
   setDistributions,
+  saveScriptSituation,
   type RosterClass,
   type WordSetWordInput,
 } from "@/app/actions/wordsets";
@@ -29,6 +30,7 @@ export interface SetSummary {
   status: string;
   wordCount: number;
   distCount: number;
+  scriptSituation: string | null;
 }
 
 type Row = WordSetWordInput;
@@ -52,8 +54,9 @@ export function WordSetManager({
 }) {
   const [sets, setSets] = useState<SetSummary[]>(initialSets);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState<"words" | "dist">("words");
+  const [tab, setTab] = useState<"words" | "dist" | "script">("words");
   const [rows, setRows] = useState<Row[]>([]);
+  const [situation, setSituation] = useState("");
   const [pickerIndex, setPickerIndex] = useState<number | null>(null);
   const [paste, setPaste] = useState("");
   const [distClasses, setDistClasses] = useState<Set<string>>(new Set());
@@ -78,6 +81,7 @@ export function WordSetManager({
     setTab("words");
     setMsg(null);
     setError(null);
+    setSituation(sets.find((s) => s.id === id)?.scriptSituation ?? "");
     setBusy(true);
     try {
       const [w, d] = await Promise.all([getWordSetWords(id), getDistributions(id)]);
@@ -97,7 +101,7 @@ export function WordSetManager({
     setError(null);
     try {
       const id = await createWordSet(newTitle, newDesc);
-      const s: SetSummary = { id, title: newTitle.trim(), description: newDesc.trim() || null, status: "draft", wordCount: 0, distCount: 0 };
+      const s: SetSummary = { id, title: newTitle.trim(), description: newDesc.trim() || null, status: "draft", wordCount: 0, distCount: 0, scriptSituation: null };
       setSets((xs) => [s, ...xs]);
       setNewTitle("");
       setNewDesc("");
@@ -230,6 +234,22 @@ export function WordSetManager({
     }
   }
 
+  async function saveSituation() {
+    if (!selectedId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await saveScriptSituation(selectedId, situation);
+      const value = situation.trim() || null;
+      setSets((xs) => xs.map((s) => (s.id === selectedId ? { ...s, scriptSituation: value } : s)));
+      flash(value ? "대본 미션 상황 저장됨 — 학생은 이 상황으로 고정 미션을 받아요." : "상황 비움 — AI가 상황을 배정합니다.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "저장 실패");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="row" style={{ alignItems: "flex-start", gap: 16 }}>
       {/* 좌측: 세트 목록 */}
@@ -303,6 +323,9 @@ export function WordSetManager({
             <div className="row" style={{ gap: 8, margin: "8px 0" }}>
               <button className={`btn ${tab === "words" ? "" : "secondary"}`} type="button" onClick={() => setTab("words")}>단어 편집</button>
               <button className={`btn ${tab === "dist" ? "" : "secondary"}`} type="button" onClick={() => setTab("dist")}>배부 관리</button>
+              <button className={`btn ${tab === "script" ? "" : "secondary"}`} type="button" onClick={() => setTab("script")}>
+                대본 미션{selected.scriptSituation ? " ✓" : ""}
+              </button>
             </div>
 
             {msg && <p className="ok">{msg}</p>}
@@ -389,7 +412,7 @@ export function WordSetManager({
                   </div>
                 </div>
               </>
-            ) : (
+            ) : tab === "dist" ? (
               <div className="card">
                 <b>배부 관리</b>
                 <p className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>
@@ -414,6 +437,28 @@ export function WordSetManager({
                   <button className="btn" type="button" onClick={saveDist} disabled={busy}>배부 저장</button>
                   <span className="muted" style={{ fontSize: 13, alignSelf: "center", marginLeft: 8 }}>
                     선택: 반 {distClasses.size} · 학생 {distStudents.size}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="card">
+                <b>대본 미션 상황</b>
+                <p className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>
+                  학생이 <b>대본 미션</b>에서 받을 상황(장면·장르)을 한국어로 적으세요. 예: “학교 축제 안내 방송을 한다”.
+                  설정하면 학생은 이 상황을 <b>고정 미션</b>으로 받습니다(학생이 AI로 상황을 다시 받거나 수정할 수 없어요).
+                  비워 두면 기존처럼 AI가 매번 상황을 배정합니다.
+                </p>
+                <textarea
+                  rows={3}
+                  value={situation}
+                  onChange={(e) => setSituation(e.target.value)}
+                  placeholder="예) 일기예보 아나운서가 되어, 오늘 날씨를 청중에게 전달하는 방송 대본을 작성한다."
+                  style={{ width: "100%" }}
+                />
+                <div className="row" style={{ gap: 8, marginTop: 8, alignItems: "center" }}>
+                  <button className="btn" type="button" onClick={saveSituation} disabled={busy}>저장</button>
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    {situation.trim() ? "학생: 고정 미션" : "학생: AI 배정"}
                   </span>
                 </div>
               </div>

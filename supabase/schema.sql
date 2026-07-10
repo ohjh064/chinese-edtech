@@ -86,11 +86,13 @@ create table if not exists assessments (
   reveal_answers_in_practice boolean not null default true,            -- §15-4
   proctoring boolean not null default false,                           -- §15-5
   allow_practice boolean not null default false,                       -- 학생 연습 허용(연습 모드 + AI 피드백)
+  script_situation text,                                               -- 대본 미션 상황(교사 설정; null=AI 배정)
   status assessment_status not null default 'draft',
   created_at timestamptz not null default now()
 );
 -- 기존 DB 업그레이드(멱등)
 alter table assessments add column if not exists allow_practice boolean not null default false;
+alter table assessments add column if not exists script_situation text;
 
 -- 학생 노출 가능한 문항 정보
 create table if not exists words (

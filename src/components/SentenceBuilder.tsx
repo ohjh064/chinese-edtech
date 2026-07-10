@@ -1,12 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import {
-  gradeSentence,
-  sentenceHint,
-  type BuilderItem,
-} from "@/app/actions/sentence-builder";
+import { useRef, useState } from "react";
+import type { BuilderItem, GradeResult } from "@/app/actions/sentence-builder";
+import type { OrderTutorTurn, OrderTutorReply } from "@/lib/order-tutor";
 import { SpeakButton } from "@/components/SpeakButton";
+import { SentenceOrderTutor } from "@/components/SentenceOrderTutor";
 
 interface Tok {
   t: string;
@@ -14,7 +12,27 @@ interface Tok {
 }
 const DIFF: Record<string, string> = { easy: "Easy", normal: "Normal", hard: "Hard" };
 
-export function SentenceBuilder({ items }: { items: BuilderItem[] }) {
+/**
+ * 문장 배열 게임(회화 학습·대본 미션 공용). 채점/힌트/튜터는 백엔드별로 다르므로 props로 주입한다.
+ * 정답 토큰 순서는 서버(onGrade/onHint/tutorAsk)에서만 다뤄 클라이언트로 오지 않는다.
+ */
+export function SentenceBuilder({
+  items,
+  onGrade,
+  onHint,
+  tutorAsk,
+}: {
+  items: BuilderItem[];
+  onGrade: (itemId: string, ordered: string[]) => Promise<GradeResult>;
+  onHint: (itemId: string, count: number) => Promise<string[]>;
+  tutorAsk?: (
+    itemId: string,
+    tokens: string[],
+    arranged: string[],
+    history: OrderTutorTurn[],
+    message: string,
+  ) => Promise<OrderTutorReply>;
+}) {
   const [idx, setIdx] = useState(0);
   const item = items[idx];
   const [pool, setPool] = useState<Tok[]>(() => toToks(items[0]?.tokens ?? []));
@@ -23,8 +41,11 @@ export function SentenceBuilder({ items }: { items: BuilderItem[] }) {
   const [hint, setHint] = useState<string[] | null>(null);
   const [hintCount, setHintCount] = useState(0);
   const [solved, setSolved] = useState(0);
+  const [showTutor, setShowTutor] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const arrangedRef = useRef<Tok[]>(arranged);
+  arrangedRef.current = arranged;
 
   function toToksFor(i: number) {
     setPool(toToks(items[i]?.tokens ?? []));
@@ -50,7 +71,7 @@ export function SentenceBuilder({ items }: { items: BuilderItem[] }) {
     setBusy(true);
     setError(null);
     try {
-      const r = await gradeSentence(item.id, arranged.map((x) => x.t));
+      const r = await onGrade(item.id, arranged.map((x) => x.t));
       setResult(r);
       if (r.correct) setSolved((s) => s + 1);
     } catch (e) {
@@ -63,7 +84,7 @@ export function SentenceBuilder({ items }: { items: BuilderItem[] }) {
     if (!item) return;
     setBusy(true);
     try {
-      const r = await sentenceHint(item.id, hintCount + 1);
+      const r = await onHint(item.id, hintCount + 1);
       setHint(r);
       setHintCount((c) => c + 1);
     } catch {
@@ -143,11 +164,20 @@ export function SentenceBuilder({ items }: { items: BuilderItem[] }) {
           </div>
         )}
 
-        <div className="row" style={{ marginTop: 12, alignItems: "center" }}>
+        <div className="row" style={{ marginTop: 12, alignItems: "center", flexWrap: "wrap" }}>
           {!result?.correct ? (
             <>
               <button className="btn" type="button" onClick={check} disabled={busy || !arranged.length}>확인</button>
               <button className="btn secondary" type="button" onClick={getHint} disabled={busy}>힌트</button>
+              {tutorAsk && (
+                <button
+                  className={`btn ${showTutor ? "secondary" : ""}`}
+                  type="button"
+                  onClick={() => setShowTutor((v) => !v)}
+                >
+                  {showTutor ? "튜터 닫기" : "🧑‍🏫 어순 튜터"}
+                </button>
+              )}
             </>
           ) : (
             <button className="btn" type="button" onClick={next}>다음 →</button>
@@ -155,6 +185,15 @@ export function SentenceBuilder({ items }: { items: BuilderItem[] }) {
         </div>
         {error && <p className="error">{error}</p>}
       </div>
+
+      {tutorAsk && showTutor && (
+        <SentenceOrderTutor
+          key={item.id}
+          ask={(history, message) =>
+            tutorAsk(item.id, item.tokens, arrangedRef.current.map((x) => x.t), history, message)
+          }
+        />
+      )}
     </div>
   );
 }

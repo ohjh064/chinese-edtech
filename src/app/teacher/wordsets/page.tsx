@@ -44,6 +44,7 @@ export default async function WordSetsPage() {
     status: a.status,
     wordCount: wordCount.get(a.id) ?? 0,
     distCount: distCount.get(a.id) ?? 0,
+    scriptSituation: a.script_situation,
   }));
 
   const roster = await getTeacherRoster();

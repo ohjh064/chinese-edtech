@@ -9,6 +9,7 @@ import {
   createSupabaseAdminClient,
 } from "@/lib/supabase/server";
 import { shuffleTokens, checkSentence, hintTokens, splitTrailingPunct } from "@/lib/sentence-build";
+import { orderTutorTurn, type OrderTutorTurn, type OrderTutorReply } from "@/lib/order-tutor";
 
 async function requireStudent() {
   const supabase = await createSupabaseServerClient();
@@ -130,4 +131,25 @@ export async function sentenceHint(itemId: string, count: number): Promise<strin
   const max = Math.max(1, core.length - 1);
   const n = Math.min(Math.max(0, Math.floor(count)), max);
   return hintTokens(core, n);
+}
+
+/** 회화 학습 문장 배열용 어순 튜터 한 턴(정답은 sentence_items에서 서버가 로드; 상황은 itemId로 유도). */
+export async function askBuilderTutor(
+  itemId: string,
+  tokens: string[],
+  arranged: string[],
+  history: OrderTutorTurn[],
+  message: string,
+): Promise<OrderTutorReply> {
+  const { supabase } = await requireStudent();
+  const admin = createSupabaseAdminClient();
+  const { data: item } = await admin
+    .from("sentence_items")
+    .select("situation_id, target_ko, tokens")
+    .eq("id", itemId)
+    .single<{ situation_id: string; target_ko: string | null; tokens: string[] }>();
+  if (!item) throw new Error("문항을 찾을 수 없습니다");
+  await assertViewable(supabase, item.situation_id);
+  const { core } = splitTrailingPunct(item.tokens);
+  return orderTutorTurn({ promptKo: item.target_ko ?? "", tokens, target: core, arranged, history, message });
 }
