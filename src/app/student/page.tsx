@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { Topbar } from "@/components/Topbar";
 import { aggregatePracticeWeakness, type PracticeLogRow } from "@/lib/analytics";
 import { StudentMessageReply } from "@/components/MessageComposer";
+import { StudentFeedbackButton } from "@/components/FeedbackThread";
 import type { Assessment, Profile, Submission, Word, StudentMessage } from "@/lib/database.types";
 
 export default async function StudentDashboard() {
@@ -67,10 +68,27 @@ export default async function StudentDashboard() {
     .eq("student_id", user.id)
     .order("created_at", { ascending: true });
   const msgs = (msgsRaw ?? []) as StudentMessage[];
-  const teacherIds = [...new Set(msgs.map((m) => m.teacher_id))];
+  // 단어 세트(assessment)별 피드백 스레드와 전역(세트 없는) 스레드를 분리
+  const feedbackByAssessment = new Map<
+    string,
+    { teacherId: string; messages: StudentMessage[]; unread: number }
+  >();
+  for (const m of msgs) {
+    if (!m.assessment_id) continue;
+    const cur = feedbackByAssessment.get(m.assessment_id) ?? {
+      teacherId: m.teacher_id,
+      messages: [],
+      unread: 0,
+    };
+    cur.messages.push(m);
+    if (m.sender_role === "teacher" && !m.read_at) cur.unread += 1;
+    feedbackByAssessment.set(m.assessment_id, cur);
+  }
+  const globalMsgs = msgs.filter((m) => !m.assessment_id);
+  const teacherIds = [...new Set(globalMsgs.map((m) => m.teacher_id))];
   const threads = teacherIds.map((tid) => ({
     teacherId: tid,
-    messages: msgs.filter((m) => m.teacher_id === tid),
+    messages: globalMsgs.filter((m) => m.teacher_id === tid),
   }));
   const weakWordIds = weak.map((w) => w.wordId);
   const { data: weakWords } = weakWordIds.length
@@ -215,6 +233,7 @@ export default async function StudentDashboard() {
     const isPractice = a.mode === "practice";
     const returned = !!sub?.returned_at && sub.status === "in_progress";
     const canPractice = a.allow_practice || returnedAssessmentIds.has(a.id);
+    const fb = feedbackByAssessment.get(a.id);
     return (
       <div className="card" key={a.id}>
         <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
@@ -278,6 +297,16 @@ export default async function StudentDashboard() {
             ↩ 교사가 돌려줬습니다.
             {sub?.returned_note ? ` 코멘트: ${sub.returned_note}` : " 답안을 고쳐 다시 제출하거나 연습해 보세요."}
           </p>
+        )}
+        {fb && (
+          <div className="row" style={{ marginTop: 10 }}>
+            <StudentFeedbackButton
+              teacherId={fb.teacherId}
+              assessmentId={a.id}
+              messages={fb.messages}
+              unread={fb.unread}
+            />
+          </div>
         )}
       </div>
     );

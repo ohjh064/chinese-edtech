@@ -83,6 +83,7 @@ export interface StudyLogRow {
   word_id: string;
   step: number; // 1..5
   correct: boolean | null; // null = 1단계(듣기)
+  attempt_at?: string; // 학습 시각(ISO). 있으면 날짜 집계에 사용
 }
 
 export interface StudyStepStat {
@@ -91,22 +92,39 @@ export interface StudyStepStat {
   correct: number; // 정답 단어 수(1단계는 0)
   wrong: number; // 오답 단어 수
   wrongWordIds: string[]; // 오답 단어 id
+  lastAt: string | null; // 이 단계 마지막 학습 시각(ISO)
 }
 
 export interface StudySummary {
   learnedWordIds: string[]; // 전 단계에서 한 번이라도 학습한 고유 단어
   wrongWordIds: string[]; // 한 번이라도 틀린 고유 단어
   byStep: StudyStepStat[]; // 단계 오름차순
+  firstAt: string | null; // 최초 학습 시각(ISO)
+  lastAt: string | null; // 최근 학습 시각(ISO)
+  dates: string[]; // 학습한 날짜(YYYY-MM-DD, UTC 기준) 오름차순 — 며칠에 걸쳐 했는지
+}
+
+/** ISO(UTC) 문자열은 사전식 비교로 시간 순 정렬이 성립. null 안전 min/max. */
+function minIso(a: string | null, b: string): string {
+  return a === null || b < a ? b : a;
+}
+function maxIso(a: string | null, b: string): string {
+  return a === null || b > a ? b : a;
 }
 
 /**
  * study_logs 행들을 학습 요약으로 집계(한 학생 또는 한 세트 범위의 rows 입력).
  * (word, step)별로 한 번이라도 correct===false면 그 단계에서 오답 처리.
+ * attempt_at이 있으면 세트 최초/최근 학습 시각·학습 날짜 목록·단계별 마지막 시각을 함께 낸다.
  */
 export function summarizeStudyLogs(rows: StudyLogRow[]): StudySummary {
   const stepWords = new Map<number, Map<string, { wrong: boolean }>>();
+  const stepLast = new Map<number, string | null>();
   const learned = new Set<string>();
   const wrongAll = new Set<string>();
+  const dateSet = new Set<string>();
+  let firstAt: string | null = null;
+  let lastAt: string | null = null;
   for (const r of rows) {
     learned.add(r.word_id);
     if (r.correct === false) wrongAll.add(r.word_id);
@@ -118,6 +136,13 @@ export function summarizeStudyLogs(rows: StudyLogRow[]): StudySummary {
     const w = m.get(r.word_id) ?? { wrong: false };
     if (r.correct === false) w.wrong = true;
     m.set(r.word_id, w);
+
+    if (r.attempt_at) {
+      firstAt = minIso(firstAt, r.attempt_at);
+      lastAt = maxIso(lastAt, r.attempt_at);
+      stepLast.set(r.step, maxIso(stepLast.get(r.step) ?? null, r.attempt_at));
+      dateSet.add(r.attempt_at.slice(0, 10)); // YYYY-MM-DD
+    }
   }
   const byStep: StudyStepStat[] = [...stepWords.entries()]
     .sort((a, b) => a[0] - b[0])
@@ -126,12 +151,15 @@ export function summarizeStudyLogs(rows: StudyLogRow[]): StudySummary {
       const attempted = m.size;
       const wrong = wrongWordIds.length;
       const correct = step === 1 ? 0 : attempted - wrong;
-      return { step, attempted, correct, wrong, wrongWordIds };
+      return { step, attempted, correct, wrong, wrongWordIds, lastAt: stepLast.get(step) ?? null };
     });
   return {
     learnedWordIds: [...learned],
     wrongWordIds: [...wrongAll],
     byStep,
+    firstAt,
+    lastAt,
+    dates: [...dateSet].sort(),
   };
 }
 

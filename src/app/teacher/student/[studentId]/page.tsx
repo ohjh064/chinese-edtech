@@ -16,6 +16,10 @@ const STEP_LABELS: Record<number, string> = {
   5: "Writing",
 };
 
+function fmtDate(iso: string | null): string {
+  return iso ? new Date(iso).toLocaleDateString("ko-KR") : "-";
+}
+
 type LogRow = StudyLogRow & { assessment_id: string };
 
 export default async function StudentLearningPage({
@@ -42,7 +46,7 @@ export default async function StudentLearningPage({
   // 이 학생의 학습 로그(RLS로 내 담당 평가만 보임)
   const { data: logsRaw } = await supabase
     .from("study_logs")
-    .select("assessment_id, word_id, step, correct")
+    .select("assessment_id, word_id, step, correct, attempt_at")
     .eq("student_id", studentId);
   const logs = (logsRaw ?? []) as LogRow[];
 
@@ -100,6 +104,13 @@ export default async function StudentLearningPage({
                 학습 {sec.summary.learnedWordIds.length} · 오답 {sec.summary.wrongWordIds.length}
               </span>
             </div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+              최근 학습 {fmtDate(sec.summary.lastAt)}
+              {sec.summary.dates.length > 1 && ` · 총 ${sec.summary.dates.length}일`}
+              {sec.summary.firstAt && sec.summary.firstAt.slice(0, 10) !== (sec.summary.lastAt ?? "").slice(0, 10)
+                ? ` (${fmtDate(sec.summary.firstAt)}부터)`
+                : ""}
+            </div>
             <div style={{ marginTop: 8 }}>
               {sec.summary.byStep.map((s) => (
                 <div key={s.step} className="row" style={{ alignItems: "baseline", gap: 8, margin: "2px 0" }}>
@@ -112,6 +123,7 @@ export default async function StudentLearningPage({
                       오답: {s.wrongWordIds.map((w) => hanziById.get(w) ?? "?").join(", ")}
                     </span>
                   )}
+                  <span className="muted" style={{ fontSize: 12, marginLeft: "auto" }}>{fmtDate(s.lastAt)}</span>
                 </div>
               ))}
             </div>

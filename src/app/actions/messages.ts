@@ -58,8 +58,12 @@ export async function sendTeacherMessage(
   if (assessmentId) revalidatePath(`/teacher/${assessmentId}/learning`);
 }
 
-/** 학생 → 교사 답글. */
-export async function replyToTeacher(teacherId: string, body: string): Promise<void> {
+/** 학생 → 교사 답글. assessmentId를 주면 그 단어 세트 피드백 스레드로 이어진다. */
+export async function replyToTeacher(
+  teacherId: string,
+  body: string,
+  assessmentId?: string,
+): Promise<void> {
   const text = body.trim();
   if (!text) throw new Error("메시지를 입력하세요");
   const supabase = await createSupabaseServerClient();
@@ -71,6 +75,7 @@ export async function replyToTeacher(teacherId: string, body: string): Promise<v
   const { error } = await supabase.from("student_messages").insert({
     teacher_id: teacherId,
     student_id: user.id,
+    assessment_id: assessmentId ?? null,
     sender_role: "student",
     body: text,
   });
@@ -78,4 +83,27 @@ export async function replyToTeacher(teacherId: string, body: string): Promise<v
 
   revalidatePath("/student");
   revalidatePath(`/teacher/student/${user.id}`);
+  if (assessmentId) revalidatePath(`/teacher/${assessmentId}/learning`);
+}
+
+/**
+ * 학생이 스레드를 열 때 교사가 보낸 안 읽은 메시지를 읽음 처리(안읽음 배지 제거).
+ * assessmentId 미지정 = 전체(null 스코프 포함) 교사 메시지. RLS로 본인 것만 수정된다.
+ */
+export async function markTeacherMessagesRead(assessmentId?: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  let q = supabase
+    .from("student_messages")
+    .update({ read_at: new Date().toISOString() })
+    .eq("student_id", user.id)
+    .eq("sender_role", "teacher")
+    .is("read_at", null);
+  q = assessmentId ? q.eq("assessment_id", assessmentId) : q.is("assessment_id", null);
+  await q;
+  revalidatePath("/student");
 }
