@@ -9,7 +9,7 @@ import {
   createSupabaseServerClient,
   createSupabaseAdminClient,
 } from "@/lib/supabase/server";
-import { getAnthropicKey } from "@/lib/ai-key";
+import { getAnthropicKey, aiErrorMessage } from "@/lib/ai-key";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import * as z from "zod/v4";
@@ -222,14 +222,19 @@ async function speakAs(g: DualGround, self: DualSpeaker): Promise<{ zh: string; 
     : `장면을 시작하세요. "${selfName}"가 먼저 자연스럽게 말을 겁니다.`;
 
   const client = new Anthropic({ apiKey: g.apiKey });
-  const res = await client.messages.parse({
-    model: MODEL,
-    max_tokens: 512,
-    thinking: { type: "disabled" },
-    output_config: { format: zodOutputFormat(LineSchema), effort: "low" },
-    system,
-    messages: [{ role: "user", content: userContent }],
-  });
+  let res;
+  try {
+    res = await client.messages.parse({
+      model: MODEL,
+      max_tokens: 512,
+      thinking: { type: "disabled" },
+      output_config: { format: zodOutputFormat(LineSchema), effort: "low" },
+      system,
+      messages: [{ role: "user", content: userContent }],
+    });
+  } catch (e) {
+    throw new Error(aiErrorMessage(e));
+  }
   if (!res.parsed_output) throw new Error("대사 생성 실패");
   return { zh: res.parsed_output.lineZh, ko: res.parsed_output.lineKo };
 }

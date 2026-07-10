@@ -9,7 +9,7 @@ import {
   createSupabaseServerClient,
   createSupabaseAdminClient,
 } from "@/lib/supabase/server";
-import { getAnthropicKey } from "@/lib/ai-key";
+import { getAnthropicKey, aiErrorMessage } from "@/lib/ai-key";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import * as z from "zod/v4";
@@ -342,14 +342,19 @@ export async function sendTurn(
   }
 
   const client = new Anthropic({ apiKey });
-  const res = await client.messages.parse({
-    model: MODEL,
-    max_tokens: 1024,
-    thinking: { type: "disabled" },
-    output_config: { format: zodOutputFormat(TurnSchema), effort: "low" },
-    system,
-    messages: [...priorMsgs, { role: "user", content: userContent }],
-  });
+  let res;
+  try {
+    res = await client.messages.parse({
+      model: MODEL,
+      max_tokens: 1024,
+      thinking: { type: "disabled" },
+      output_config: { format: zodOutputFormat(TurnSchema), effort: "low" },
+      system,
+      messages: [...priorMsgs, { role: "user", content: userContent }],
+    });
+  } catch (e) {
+    throw new Error(aiErrorMessage(e));
+  }
   if (!res.parsed_output) throw new Error("응답 생성 실패");
   const out = res.parsed_output;
   // 보스 미션은 중간 교정/힌트 없음(§9) — 피드백을 붙이지 않는다.
@@ -516,14 +521,19 @@ export async function evaluateBoss(conversationId: string): Promise<BossEvaluati
   ].join("\n");
 
   const client = new Anthropic({ apiKey });
-  const res = await client.messages.parse({
-    model: MODEL,
-    max_tokens: 1024,
-    thinking: { type: "disabled" },
-    output_config: { format: zodOutputFormat(BossEvalSchema), effort: "low" },
-    system: evalSystem,
-    messages: [{ role: "user", content: `대화 기록:\n${transcript || "(대화 없음)"}` }],
-  });
+  let res;
+  try {
+    res = await client.messages.parse({
+      model: MODEL,
+      max_tokens: 1024,
+      thinking: { type: "disabled" },
+      output_config: { format: zodOutputFormat(BossEvalSchema), effort: "low" },
+      system: evalSystem,
+      messages: [{ role: "user", content: `대화 기록:\n${transcript || "(대화 없음)"}` }],
+    });
+  } catch (e) {
+    throw new Error(aiErrorMessage(e));
+  }
   if (!res.parsed_output) throw new Error("평가 생성 실패");
   const out = res.parsed_output;
 

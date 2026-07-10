@@ -11,7 +11,7 @@ import {
   createSupabaseAdminClient,
 } from "@/lib/supabase/server";
 import { assertCanPractice } from "@/lib/study-access";
-import { getAnthropicKey } from "@/lib/ai-key";
+import { getAnthropicKey, aiErrorMessage } from "@/lib/ai-key";
 import { toDisplayWord } from "@/grading/pinyin.js";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
@@ -221,14 +221,19 @@ export async function gradeScript(input: {
     script,
   ].join("\n");
 
-  const res = await client.messages.parse({
-    model: MODEL,
-    max_tokens: 2048,
-    thinking: { type: "disabled" },
-    output_config: { format: zodOutputFormat(GradeSchema), effort: "medium" },
-    system,
-    messages: [{ role: "user", content: user }],
-  });
+  let res;
+  try {
+    res = await client.messages.parse({
+      model: MODEL,
+      max_tokens: 2048,
+      thinking: { type: "disabled" },
+      output_config: { format: zodOutputFormat(GradeSchema), effort: "medium" },
+      system,
+      messages: [{ role: "user", content: user }],
+    });
+  } catch (e) {
+    throw new Error(aiErrorMessage(e));
+  }
   const out = res.parsed_output;
   if (!out) throw new Error("채점 응답 파싱 실패");
 
@@ -361,14 +366,19 @@ export async function askYuqi(input: {
       ? `[현재 대본]\n${draft || "(아직 비어 있음)"}\n\n[학생]\n(대화 시작 — 반갑게 인사하고 ① 단계부터 안내해줘)`
       : `[현재 대본]\n${draft || "(아직 비어 있음)"}\n\n[학생]\n${msg || "지금 내 대본을 봐주고 다음에 뭘 하면 좋을지 알려줘"}`;
 
-  const res = await client.messages.parse({
-    model: MODEL,
-    max_tokens: 1024,
-    thinking: { type: "disabled" },
-    output_config: { format: zodOutputFormat(YuqiSchema), effort: "low" },
-    system,
-    messages: [...priorMsgs, { role: "user", content: turnContent }],
-  });
+  let res;
+  try {
+    res = await client.messages.parse({
+      model: MODEL,
+      max_tokens: 1024,
+      thinking: { type: "disabled" },
+      output_config: { format: zodOutputFormat(YuqiSchema), effort: "low" },
+      system,
+      messages: [...priorMsgs, { role: "user", content: turnContent }],
+    });
+  } catch (e) {
+    throw new Error(aiErrorMessage(e));
+  }
   const out = res.parsed_output;
   if (!out) throw new Error("튜터 응답 생성 실패");
 
