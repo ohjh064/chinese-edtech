@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { SpeakButton } from "@/components/SpeakButton";
 import { YuqiTutor } from "@/components/YuqiTutor";
-import { startScriptMission, suggestSituation, gradeScript, type ScriptGradeResult } from "@/app/actions/script-mission";
+import { startScriptMission, suggestSituation, drawScriptWords, gradeScript, type ScriptGradeResult } from "@/app/actions/script-mission";
 import type { ScriptWordCard } from "@/lib/database.types";
 
 /** 대본 미션: 무작위 단어를 모두 써서 상황 대본 작성 → AI 루브릭 채점(50점). */
@@ -16,6 +16,7 @@ export function ScriptMission({ assessmentId }: { assessmentId: string }) {
   const [script, setScript] = useState("");
   const [grading, setGrading] = useState(false);
   const [rerolling, setRerolling] = useState(false);
+  const [redrawing, setRedrawing] = useState(false);
   const [result, setResult] = useState<ScriptGradeResult | null>(null);
   const [round, setRound] = useState(0);
   const [tutorStarted, setTutorStarted] = useState(false);
@@ -62,6 +63,26 @@ export function ScriptMission({ assessmentId }: { assessmentId: string }) {
       setError(e instanceof Error ? e.message : "미션을 불러오지 못했어요.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  // 상황(미션)은 그대로 두고 단어만 다시 뽑는다.
+  async function redrawWords() {
+    if (redrawing) return;
+    setRedrawing(true);
+    setError(null);
+    setResult(null);
+    setScript("");
+    setRound((n) => n + 1);
+    setTutorStarted(false);
+    setTutorVisible(false);
+    try {
+      const w = await drawScriptWords(assessmentId);
+      setWords(w);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "단어를 다시 뽑지 못했어요.");
+    } finally {
+      setRedrawing(false);
     }
   }
 
@@ -113,7 +134,7 @@ export function ScriptMission({ assessmentId }: { assessmentId: string }) {
                   {rerolling ? "받는 중…" : "🎲 AI 상황 받기"}
                 </button>
               )}
-              <button type="button" className="btn secondary" style={{ padding: "4px 10px", fontSize: 13 }} onClick={draw}>단어 다시 뽑기</button>
+              <button type="button" className="btn secondary" style={{ padding: "4px 10px", fontSize: 13 }} onClick={redrawWords} disabled={redrawing}>{redrawing ? "뽑는 중…" : "단어 다시 뽑기"}</button>
             </div>
           )}
         </div>

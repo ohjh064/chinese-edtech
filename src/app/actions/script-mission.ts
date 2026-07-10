@@ -139,6 +139,15 @@ export async function startScriptMission(assessmentId: string): Promise<ScriptMi
   return { situation, words, situationFixed: false };
 }
 
+/** 상황은 그대로 두고 단어만 다시 추첨한다('단어 다시 뽑기'). AI 호출 없음. */
+export async function drawScriptWords(assessmentId: string): Promise<ScriptWordCard[]> {
+  const { supabase, userId } = await requireStudent();
+  await assertCanPractice(supabase, assessmentId, userId);
+  const all = await loadWordCards(assessmentId);
+  if (all.length < 2) throw new Error("대본 미션에는 단어가 2개 이상 필요합니다.");
+  return shuffle(all).slice(0, Math.min(WORD_COUNT, all.length));
+}
+
 /** 현재 단어들로 AI 상황만 다시 배정(단어는 그대로). '직접 설정' 화면에서 사용. */
 export async function suggestSituation(assessmentId: string, words: ScriptWordCard[]): Promise<string> {
   const { supabase, userId } = await requireStudent();
